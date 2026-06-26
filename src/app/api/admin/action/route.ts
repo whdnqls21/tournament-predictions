@@ -47,117 +47,135 @@ export async function POST(req: NextRequest) {
   const action = body?.action;
   const sb = createServiceClient();
 
-  // ── 셋업: 32강 16경기 대진 배치 + (선택) 참가자 PIN 지정 ──────────────
-  if (action === "setup") {
-    const matchups = body?.matchups;
-    const force = body?.force === true;
+  // ── 셋업: 32강 한 경기(슬롯) 저장 — 두 팀 + (선택) 시작 시간 ──────────────
+  // 16경기를 한 번에가 아니라 경기마다 따로 저장한다. 슬롯 단위 upsert.
+  if (action === "setupMatch") {
+    const slot = body?.slot;
+    if (typeof slot !== "number" || !Number.isInteger(slot) || slot < 0 || slot > 15) {
+      return NextResponse.json({ error: "잘못된 경기 번호입니다." }, { status: 400 });
+    }
+    const teamA = typeof body?.teamA === "string" ? body.teamA.trim() : "";
+    const teamB = typeof body?.teamB === "string" ? body.teamB.trim() : "";
+    if (!teamA || !teamB) {
+      return NextResponse.json({ error: "두 팀 이름을 모두 입력하세요." }, { status: 400 });
+    }
+    if (teamA === teamB) {
+      return NextResponse.json({ error: "같은 팀끼리 맞붙을 수 없습니다." }, { status: 400 });
+    }
+    const startsAt = normalizeStartsAt(body?.startsAt);
+    if (startsAt === undefined) {
+      return NextResponse.json({ error: "시작 시간 형식이 올바르지 않습니다." }, { status: 400 });
+    }
 
-    if (!Array.isArray(matchups) || matchups.length !== 16) {
-      return NextResponse.json({ error: "32강 16경기를 모두 입력하세요." }, { status: 400 });
-    }
-    const teams: string[] = [];
-    for (const pair of matchups) {
-      const a = typeof pair?.[0] === "string" ? pair[0].trim() : "";
-      const b = typeof pair?.[1] === "string" ? pair[1].trim() : "";
-      if (!a || !b) {
-        return NextResponse.json({ error: "빈 팀 이름이 있습니다." }, { status: 400 });
-      }
-      teams.push(a, b);
-    }
-    if (new Set(teams).size !== 32) {
-      return NextResponse.json({ error: "팀 이름은 32개가 모두 달라야 합니다." }, { status: 400 });
-    }
-
-    // 진행 중(결과 입력됨)인데 force 없으면 거부 (예측·결과 날아감 방지)
-    const existing = await fetchMatches(sb);
-    if (existing.some((m) => m.winner) && !force) {
+    const existing = (await fetchMatches(sb)).filter((m) => m.round === "R32");
+    const mineRow = existing.find((m) => m.bracket_slot === slot);
+    // 이미 시작됐거나 결과가 들어간 경기는 대진 변경 불가
+    if (mineRow && (mineRow.winner || matchClosed(mineRow, Date.now()))) {
       return NextResponse.json(
-        { error: "이미 결과가 입력된 대회입니다. 다시 셋업하면 모두 초기화됩니다. (force 필요)" },
-        { status: 409 }
+        { error: "이미 시작되었거나 결과가 입력된 경기는 수정할 수 없습니다." },
+        { status: 400 }
+      );
+    }
+    // 다른 슬롯에 이미 쓰인 팀 이름과 중복 금지
+    const usedElsewhere = new Set<string>();
+    for (const m of existing) {
+      if (m.bracket_slot === slot) continue;
+      if (m.team_a) usedElsewhere.add(m.team_a);
+      if (m.team_b) usedElsewhere.add(m.team_b);
+    }
+    if (usedElsewhere.has(teamA) || usedElsewhere.has(teamB)) {
+      return NextResponse.json(
+        { error: "다른 경기에 이미 쓰인 팀 이름입니다." },
+        { status: 400 }
       );
     }
 
-    // 전체 초기화 후 재생성
+    const { error } = await sb.from("matches").upsert(
+      { round: "R32", bracket_slot: slot, team_a: teamA, team_b: teamB, starts_at: startsAt },
+      { onConflict: "round,bracket_slot" }
+    );
+    if (error) {
+      console.error("setupMatch 실패", error);
+      return NextResponse.json(
+        { error: `경기 저장에 실패했습니다. (${error.message}) — /api/health 로 점검하세요.` },
+        { status: 500 }
+      );
+    }
+
+    // 다음 라운드 골격이 없으면 만들어 둔다(최초 1회). 진행·표시에 필요.
+    const haveRounds = new Set((await fetchMatches(sb)).map((m) => m.round));
+    const skeleton: Pick<
+      Match,
+      "round" | "bracket_slot" | "team_a" | "team_b" | "starts_at"
+    >[] = [];
+    for (const round of ["R16", "R8", "SF", "FINAL", "THIRD"] as RoundKey[]) {
+      if (haveRounds.has(round)) continue;
+      for (let s = 0; s < ROUND_SLOT_COUNT[round]; s++) {
+        skeleton.push({ round, bracket_slot: s, team_a: null, team_b: null, starts_at: null });
+      }
+    }
+    if (skeleton.length > 0) {
+      const { error: skErr } = await sb.from("matches").insert(skeleton);
+      if (skErr) {
+        console.error("setupMatch 골격 생성 실패", skErr);
+        return NextResponse.json(
+          { error: `다음 라운드 생성에 실패했습니다. (${skErr.message}) — /api/health 로 점검하세요.` },
+          { status: 500 }
+        );
+      }
+    }
+
+    // 세팅된 경기는 곧바로 예측 가능 → 앱을 열어둔다(최초 저장 시 setup_done=true).
+    const { data: setRow } = await sb
+      .from("settings")
+      .select("setup_done,current_open_round")
+      .eq("id", 1)
+      .maybeSingle();
+    if (!setRow?.setup_done || !setRow?.current_open_round) {
+      const { error: settingsErr } = await sb.from("settings").upsert(
+        { id: 1, setup_done: true, current_open_round: setRow?.current_open_round ?? "R32" },
+        { onConflict: "id" }
+      );
+      if (settingsErr) {
+        console.error("setupMatch 설정 저장 실패", settingsErr);
+        return NextResponse.json(
+          { error: `셋업 상태 저장에 실패했습니다. (${settingsErr.message}) — /api/health 로 점검하세요.` },
+          { status: 500 }
+        );
+      }
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  // ── 대회 초기화: 모든 예측·경기 삭제 + 셋업 미완료 상태로 (경기별 재입력) ──
+  if (action === "reset") {
     const { error: delPredErr } = await sb.from("predictions").delete().neq("id", ZERO_UUID);
     if (delPredErr) {
-      console.error("setup 예측 초기화 실패", delPredErr);
+      console.error("reset 예측 초기화 실패", delPredErr);
       return NextResponse.json(
-        { error: `기존 예측 초기화에 실패했습니다. (${delPredErr.message}) — /api/health 로 점검하세요.` },
+        { error: `예측 초기화에 실패했습니다. (${delPredErr.message}) — /api/health 로 점검하세요.` },
         { status: 500 }
       );
     }
     const { error: delMatchErr } = await sb.from("matches").delete().neq("id", ZERO_UUID);
     if (delMatchErr) {
-      console.error("setup 대진 초기화 실패", delMatchErr);
+      console.error("reset 대진 초기화 실패", delMatchErr);
       return NextResponse.json(
-        { error: `기존 대진 초기화에 실패했습니다. (${delMatchErr.message}) — /api/health 로 점검하세요.` },
+        { error: `대진 초기화에 실패했습니다. (${delMatchErr.message}) — /api/health 로 점검하세요.` },
         { status: 500 }
       );
     }
-
-    // 경기별 시작 시간(선택) — 32강 16경기에 대응하는 배열. 빈값은 미정(null).
-    const starts = Array.isArray(body?.starts) ? body.starts : [];
-
-    const rows: Pick<
-      Match,
-      "round" | "bracket_slot" | "team_a" | "team_b" | "starts_at"
-    >[] = [];
-    for (let slot = 0; slot < matchups.length; slot++) {
-      const pair = matchups[slot] as [string, string];
-      const startsAt = normalizeStartsAt(starts[slot]);
-      if (startsAt === undefined) {
-        return NextResponse.json(
-          { error: `${slot + 1}번 경기의 시작 시간 형식이 올바르지 않습니다.` },
-          { status: 400 }
-        );
-      }
-      rows.push({
-        round: "R32",
-        bracket_slot: slot,
-        team_a: pair[0].trim(),
-        team_b: pair[1].trim(),
-        starts_at: startsAt,
-      });
-    }
-    for (const round of ["R16", "R8", "SF", "FINAL", "THIRD"] as RoundKey[]) {
-      for (let slot = 0; slot < ROUND_SLOT_COUNT[round]; slot++) {
-        rows.push({ round, bracket_slot: slot, team_a: null, team_b: null, starts_at: null });
-      }
-    }
-    const { error: insErr } = await sb.from("matches").insert(rows);
-    if (insErr) {
-      console.error("setup insert 실패", insErr);
-      return NextResponse.json(
-        { error: `대진 생성에 실패했습니다. (${insErr.message}) — /api/health 로 점검하세요.` },
-        { status: 500 }
-      );
-    }
-
-    // 참가자 PIN (선택)
-    const pins = body?.pins;
-    if (pins && typeof pins === "object") {
-      for (const [participantId, pin] of Object.entries(pins)) {
-        if (isValidPin(pin)) {
-          const hash = await hashPin(pin);
-          await sb.from("participants").update({ pin_hash: hash }).eq("id", participantId);
-        }
-      }
-    }
-
-    // 셋업 완료 표시 — 이 쓰기가 실패하면 setup_done 이 false 로 남아
-    // 관리자 화면이 다시 셋업 폼을 보여주므로("저장이 안 된" 것처럼 보임),
-    // 반드시 에러를 확인해 사용자에게 알린다.
     const { error: settingsErr } = await sb
       .from("settings")
-      .upsert({ id: 1, setup_done: true, current_open_round: "R32" }, { onConflict: "id" });
+      .upsert({ id: 1, setup_done: false, current_open_round: null }, { onConflict: "id" });
     if (settingsErr) {
-      console.error("setup 설정 저장 실패", settingsErr);
+      console.error("reset 설정 저장 실패", settingsErr);
       return NextResponse.json(
-        { error: `셋업 상태 저장에 실패했습니다. (${settingsErr.message}) — /api/health 로 점검하세요.` },
+        { error: `초기화 상태 저장에 실패했습니다. (${settingsErr.message}) — /api/health 로 점검하세요.` },
         { status: 500 }
       );
     }
-
     return NextResponse.json({ ok: true });
   }
 

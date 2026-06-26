@@ -158,32 +158,37 @@ function Dashboard({ admin, reload }: { admin: AdminState; reload: () => void })
         </div>
       )}
 
-      {!admin.setupDone ? (
-        <SetupForm admin={admin} run={run} busy={busy} force={false} />
-      ) : (
-        <>
-          <PinManager admin={admin} run={run} busy={busy} />
-          <RoundControl admin={admin} run={run} busy={busy} />
-          <UndoCard admin={admin} run={run} busy={busy} />
+      <PinManager admin={admin} run={run} busy={busy} />
+      <Setup32 admin={admin} run={run} busy={busy} />
+      <RoundControl admin={admin} run={run} busy={busy} />
+      <UndoCard admin={admin} run={run} busy={busy} />
 
-          <Card className="flex flex-col gap-2">
+      <Card className="flex flex-col gap-2">
+        <button
+          onClick={() => setShowReSetup((v) => !v)}
+          className="text-left text-sm text-ink-dim"
+        >
+          {showReSetup ? "▲ 대회 초기화 닫기" : "▼ 대회 초기화 (전체 삭제)"}
+        </button>
+        {showReSetup && (
+          <>
+            <p className="text-xs text-danger">
+              ⚠️ 초기화하면 모든 예측·결과·대진이 삭제되고 32강부터 다시 입력합니다.
+            </p>
             <button
-              onClick={() => setShowReSetup((v) => !v)}
-              className="text-left text-sm text-ink-dim"
+              disabled={busy}
+              onClick={() => {
+                if (confirm("정말 초기화할까요? 모든 예측·결과·대진이 삭제됩니다.")) {
+                  run(() => postJSON("/api/admin/action", { action: "reset" }));
+                }
+              }}
+              className="rounded-lg border border-danger/50 bg-danger/10 py-2 text-sm text-danger disabled:opacity-40"
             >
-              {showReSetup ? "▲ 대회 다시 셋업 닫기" : "▼ 대회 다시 셋업 (초기화)"}
+              전체 초기화
             </button>
-            {showReSetup && (
-              <>
-                <p className="text-xs text-danger">
-                  ⚠️ 다시 셋업하면 모든 예측·결과가 삭제됩니다.
-                </p>
-                <SetupForm admin={admin} run={run} busy={busy} force />
-              </>
-            )}
-          </Card>
-        </>
-      )}
+          </>
+        )}
+      </Card>
     </div>
   );
 }
@@ -256,13 +261,12 @@ function RoundControl({
   run: (fn: () => Promise<unknown>) => Promise<void>;
   busy: boolean;
 }) {
-  const rounds = admin.activeRounds;
+  // 32강은 아래 "32강 대진" 섹션에서 다루므로 여기선 16강 이후만.
+  const rounds = admin.activeRounds.filter((r) => r !== "R32");
+  if (rounds.length === 0) return null;
   return (
     <Card className="flex flex-col gap-4">
-      <h2 className="font-display text-lg text-ink">라운드 진행</h2>
-      {rounds.length === 0 && (
-        <p className="text-sm text-ink-dim">진행할 라운드가 없습니다.</p>
-      )}
+      <h2 className="font-display text-lg text-ink">라운드 진행 (16강~)</h2>
       {rounds.map((round) => (
         <RoundBlock key={round} round={round} admin={admin} run={run} busy={busy} />
       ))}
@@ -447,123 +451,169 @@ function UndoCard({
   );
 }
 
-function SetupForm({
+function Setup32({
   admin,
   run,
   busy,
-  force,
 }: {
   admin: AdminState;
   run: (fn: () => Promise<unknown>) => Promise<void>;
   busy: boolean;
-  force: boolean;
 }) {
-  const [matchups, setMatchups] = useState<string[][]>(
-    Array.from({ length: 16 }, () => ["", ""])
-  );
-  const [starts, setStarts] = useState<string[]>(Array.from({ length: 16 }, () => ""));
-  const [pins, setPins] = useState<Record<string, string>>({});
-
-  const allFilled = matchups.every((p) => p[0].trim() && p[1].trim());
-
-  const setTeam = (i: number, side: 0 | 1, value: string) =>
-    setMatchups((s) => {
-      const next = s.map((p) => [...p]);
-      next[i][side] = value;
-      return next;
-    });
-
-  const setStart = (i: number, value: string) =>
-    setStarts((s) => {
-      const next = [...s];
-      next[i] = value;
-      return next;
-    });
+  const r32 = matchesInRound(admin.matches, "R32");
+  const bySlot = new Map(r32.map((m) => [m.bracket_slot, m]));
+  const savedCount = r32.filter((m) => m.team_a && m.team_b).length;
 
   return (
-    <Card className="flex flex-col gap-4">
-      {!force && (
-        <div>
-          <h2 className="font-display text-lg text-ink">32강 대진 셋업</h2>
-          <p className="mt-1 text-xs text-ink-faint">
-            16경기의 두 팀과 시작 시간을 입력하세요. (브라켓 위→아래 순서) 시간은 선택이며,
-            지정하면 그 시각에 예측이 자동 마감됩니다.
-          </p>
-        </div>
-      )}
-
-      <div className="flex flex-col gap-3">
-        {matchups.map((pair, i) => (
-          <div key={i} className="flex flex-col gap-1.5 rounded-lg border border-pitch-line/60 p-2">
-            <div className="flex items-center gap-2">
-              <span className="w-7 text-right text-xs text-ink-faint">{i + 1}</span>
-              <input
-                value={pair[0]}
-                onChange={(e) => setTeam(i, 0, e.target.value)}
-                placeholder="팀 A"
-                className="w-full rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-sm text-ink outline-none focus:border-grass"
-              />
-              <span className="text-xs text-ink-faint">vs</span>
-              <input
-                value={pair[1]}
-                onChange={(e) => setTeam(i, 1, e.target.value)}
-                placeholder="팀 B"
-                className="w-full rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-sm text-ink outline-none focus:border-grass"
-              />
-            </div>
-            <div className="flex items-center gap-2 pl-9">
-              <span className="text-[11px] text-ink-faint">시작</span>
-              <input
-                type="datetime-local"
-                value={starts[i]}
-                onChange={(e) => setStart(i, e.target.value)}
-                className="tabular w-full rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-xs text-ink outline-none focus:border-grass"
-              />
-            </div>
-          </div>
-        ))}
+    <Card className="flex flex-col gap-3">
+      <div>
+        <h2 className="font-display text-lg text-ink">
+          32강 대진 <span className="text-sm text-grass">{savedCount}/16 저장</span>
+        </h2>
+        <p className="mt-1 text-xs text-ink-faint">
+          경기마다 두 팀과 시작 시간을 입력하고 <b>저장</b>하세요. 저장하면 곧바로 참가자
+          예측이 열리고, 시작 시간이 지나면 자동 마감됩니다.
+        </p>
       </div>
 
-      <div className="flex flex-col gap-2 border-t border-pitch-line pt-3">
-        <p className="text-sm text-ink-dim">참가자 PIN (선택 — 나중에 설정 가능)</p>
-        {admin.participants.map((p) => (
-          <div key={p.id} className="flex items-center gap-2">
-            <span className="w-10 font-display text-ink">{p.name}</span>
-            <input
-              type="tel"
-              inputMode="numeric"
-              maxLength={4}
-              value={pins[p.id] ?? ""}
-              onChange={(e) =>
-                setPins((s) => ({
-                  ...s,
-                  [p.id]: e.target.value.replace(/\D/g, "").slice(0, 4),
-                }))
-              }
-              placeholder="4자리"
-              className="tabular ml-auto w-24 rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-center text-ink outline-none focus:border-grass"
-            />
-          </div>
+      <div className="flex flex-col gap-2">
+        {Array.from({ length: 16 }, (_, slot) => (
+          <SetupMatchRow
+            key={slot}
+            slot={slot}
+            match={bySlot.get(slot)}
+            admin={admin}
+            run={run}
+            busy={busy}
+          />
         ))}
       </div>
-
-      <button
-        disabled={busy || !allFilled}
-        onClick={() =>
-          run(() =>
-            postJSON("/api/admin/action", {
-              action: "setup",
-              matchups,
-              starts: starts.map((v) => localInputToIso(v)),
-              pins,
-              force,
-            })
-          )
-        }
-        className="rounded-xl bg-grass py-3 font-display text-lg text-pitch-base disabled:opacity-40"
-      >
-        {allFilled ? (force ? "초기화하고 다시 셋업" : "대회 시작!") : "16경기를 모두 입력하세요"}
-      </button>
     </Card>
+  );
+}
+
+function SetupMatchRow({
+  slot,
+  match,
+  admin,
+  run,
+  busy,
+}: {
+  slot: number;
+  match: Match | undefined;
+  admin: AdminState;
+  run: (fn: () => Promise<unknown>) => Promise<void>;
+  busy: boolean;
+}) {
+  const [teamA, setTeamA] = useState(match?.team_a ?? "");
+  const [teamB, setTeamB] = useState(match?.team_b ?? "");
+  const [when, setWhen] = useState(isoToLocalInput(match?.starts_at));
+
+  const closed = match ? matchClosed(match, Date.now()) : false;
+  const saved = !!(match?.team_a && match?.team_b);
+  const dirty =
+    teamA !== (match?.team_a ?? "") ||
+    teamB !== (match?.team_b ?? "") ||
+    when !== isoToLocalInput(match?.starts_at);
+  const savedIds = match ? admin.savedByMatch?.[match.id] ?? [] : [];
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg border border-pitch-line/60 p-2">
+      <div className="flex items-center gap-2">
+        <span className="w-6 text-right text-xs text-ink-faint">{slot + 1}</span>
+        <input
+          value={teamA}
+          onChange={(e) => setTeamA(e.target.value)}
+          disabled={closed}
+          placeholder="팀 A"
+          className="w-full rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-sm text-ink outline-none focus:border-grass disabled:opacity-60"
+        />
+        <span className="text-xs text-ink-faint">vs</span>
+        <input
+          value={teamB}
+          onChange={(e) => setTeamB(e.target.value)}
+          disabled={closed}
+          placeholder="팀 B"
+          className="w-full rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-sm text-ink outline-none focus:border-grass disabled:opacity-60"
+        />
+      </div>
+
+      <div className="flex items-center gap-2 pl-8">
+        <span className="text-[11px] text-ink-faint">시작</span>
+        <input
+          type="datetime-local"
+          value={when}
+          onChange={(e) => setWhen(e.target.value)}
+          disabled={closed}
+          className="tabular w-full rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-xs text-ink outline-none focus:border-grass disabled:opacity-60"
+        />
+        <button
+          disabled={busy || closed || !teamA.trim() || !teamB.trim() || !dirty}
+          onClick={() =>
+            run(() =>
+              postJSON("/api/admin/action", {
+                action: "setupMatch",
+                slot,
+                teamA,
+                teamB,
+                startsAt: localInputToIso(when),
+              })
+            )
+          }
+          className="shrink-0 rounded-lg bg-grass/90 px-3 py-1.5 text-xs text-pitch-base disabled:opacity-40"
+        >
+          {saved && !dirty ? "저장됨" : "저장"}
+        </button>
+      </div>
+
+      {/* 상태: 마감 전엔 예측 저장 현황, 마감 후엔 진출 팀 선택 */}
+      {saved &&
+        (closed ? (
+          <div className="grid grid-cols-2 gap-2 pl-8">
+            {[match!.team_a, match!.team_b].map((team, idx) =>
+              team ? (
+                <button
+                  key={team}
+                  disabled={busy}
+                  onClick={() =>
+                    run(() =>
+                      postJSON("/api/admin/action", {
+                        action: "result",
+                        matchId: match!.id,
+                        winner: team,
+                      })
+                    )
+                  }
+                  className={`truncate rounded-lg border py-2 text-sm disabled:opacity-40 ${
+                    match!.winner === team
+                      ? "border-grass bg-grass/15 text-grass"
+                      : "border-pitch-line text-ink hover:border-grass/40"
+                  }`}
+                >
+                  {team}
+                  {match!.winner === team && " ✓"}
+                </button>
+              ) : (
+                <div key={idx} className="rounded-lg border border-dashed border-pitch-line" />
+              )
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-1.5 pl-8">
+            {admin.participants.map((p) => (
+              <span
+                key={p.id}
+                className={`rounded-full px-2 py-0.5 text-[10px] ${
+                  savedIds.includes(p.id)
+                    ? "bg-grass/15 text-grass"
+                    : "border border-pitch-line text-ink-faint"
+                }`}
+              >
+                {p.name} {savedIds.includes(p.id) ? "저장✓" : "…"}
+              </span>
+            ))}
+          </div>
+        ))}
+    </div>
   );
 }

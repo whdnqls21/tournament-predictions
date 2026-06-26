@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/Card";
 import { useAppState } from "@/components/StateProvider";
 import { postJSON } from "@/lib/client-api";
-import { ROUNDS, type RoundKey } from "@/lib/rounds";
+import { ROUND_ORDER, ROUNDS, type RoundKey } from "@/lib/rounds";
 import { formatCountdown, formatKickoff } from "@/lib/time";
 import { matchClosed, matchesInRound } from "@/lib/tournament";
 import type { Match } from "@/lib/types";
@@ -41,7 +41,10 @@ export default function PredictPage() {
     }
   }
 
-  const rounds = state.activeRounds;
+  // 세팅된(양 팀이 정해진) 경기가 하나라도 있는 라운드만 노출.
+  const rounds = ROUND_ORDER.filter((r) =>
+    matchesInRound(state.matches, r).some((m) => m.team_a && m.team_b)
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -95,7 +98,11 @@ function RoundSection({
   if (!state) return null;
 
   const def = ROUNDS[round];
-  const matches = matchesInRound(state.matches, round);
+  // 양 팀이 정해진 경기만 (아직 대진 미정인 슬롯은 숨김).
+  const matches = matchesInRound(state.matches, round).filter(
+    (m) => m.team_a && m.team_b
+  );
+  if (matches.length === 0) return null;
 
   return (
     <Card className="flex flex-col gap-3">
