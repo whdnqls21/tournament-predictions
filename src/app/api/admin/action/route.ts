@@ -67,8 +67,22 @@ export async function POST(req: NextRequest) {
     }
 
     // 전체 초기화 후 재생성
-    await sb.from("predictions").delete().neq("id", ZERO_UUID);
-    await sb.from("matches").delete().neq("id", ZERO_UUID);
+    const { error: delPredErr } = await sb.from("predictions").delete().neq("id", ZERO_UUID);
+    if (delPredErr) {
+      console.error("setup 예측 초기화 실패", delPredErr);
+      return NextResponse.json(
+        { error: `기존 예측 초기화에 실패했습니다. (${delPredErr.message}) — /api/health 로 점검하세요.` },
+        { status: 500 }
+      );
+    }
+    const { error: delMatchErr } = await sb.from("matches").delete().neq("id", ZERO_UUID);
+    if (delMatchErr) {
+      console.error("setup 대진 초기화 실패", delMatchErr);
+      return NextResponse.json(
+        { error: `기존 대진 초기화에 실패했습니다. (${delMatchErr.message}) — /api/health 로 점검하세요.` },
+        { status: 500 }
+      );
+    }
 
     const rows: Pick<Match, "round" | "bracket_slot" | "team_a" | "team_b">[] = [];
     matchups.forEach((pair: [string, string], slot: number) => {
@@ -87,7 +101,10 @@ export async function POST(req: NextRequest) {
     const { error: insErr } = await sb.from("matches").insert(rows);
     if (insErr) {
       console.error("setup insert 실패", insErr);
-      return NextResponse.json({ error: "대진 생성에 실패했습니다." }, { status: 500 });
+      return NextResponse.json(
+        { error: `대진 생성에 실패했습니다. (${insErr.message}) — /api/health 로 점검하세요.` },
+        { status: 500 }
+      );
     }
 
     // 참가자 PIN (선택)
@@ -101,9 +118,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    await sb
+    // 셋업 완료 표시 — 이 쓰기가 실패하면 setup_done 이 false 로 남아
+    // 관리자 화면이 다시 셋업 폼을 보여주므로("저장이 안 된" 것처럼 보임),
+    // 반드시 에러를 확인해 사용자에게 알린다.
+    const { error: settingsErr } = await sb
       .from("settings")
       .upsert({ id: 1, setup_done: true, current_open_round: "R32" }, { onConflict: "id" });
+    if (settingsErr) {
+      console.error("setup 설정 저장 실패", settingsErr);
+      return NextResponse.json(
+        { error: `셋업 상태 저장에 실패했습니다. (${settingsErr.message}) — /api/health 로 점검하세요.` },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ ok: true });
   }
