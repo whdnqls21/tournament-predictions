@@ -91,7 +91,7 @@ export default function LoginScreen() {
       </Card>
 
       <p className="text-center text-xs text-ink-faint">
-        PIN을 모르면 관리자(빈)에게 문의하세요.
+        PIN을 모르면 관리자에게 문의하세요.
       </p>
     </div>
   );
