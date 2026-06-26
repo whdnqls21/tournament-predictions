@@ -24,7 +24,8 @@ export interface Match {
   team_a: string | null;
   team_b: string | null;
   winner: string | null; // null = 결과 미입력
-  is_locked: boolean; // 예측 마감 여부
+  starts_at: string | null; // 경기 시작 시간(ISO). null = 미정. 지나면 예측 자동 마감.
+  is_locked: boolean; // 예측 수동 마감 여부 (관리자 강제 마감)
   created_at: string;
   updated_at: string;
 }

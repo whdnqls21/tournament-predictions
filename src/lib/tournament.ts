@@ -22,6 +22,20 @@ export const ROUND_SLOT_COUNT: Record<RoundKey, number> = {
   THIRD: 1,
 };
 
+// 경기 예측 마감 여부 — 관리자 수동 잠금(is_locked) 또는 시작 시간 경과.
+// now 는 epoch ms (호출부에서 주입 → 순수 함수 유지, 테스트 가능).
+export function matchClosed(
+  m: Pick<Match, "is_locked" | "starts_at">,
+  now: number
+): boolean {
+  if (m.is_locked) return true;
+  if (m.starts_at) {
+    const t = new Date(m.starts_at).getTime();
+    if (!Number.isNaN(t) && now >= t) return true;
+  }
+  return false;
+}
+
 export function matchesInRound(matches: Match[], round: RoundKey): Match[] {
   return matches
     .filter((m) => m.round === round)

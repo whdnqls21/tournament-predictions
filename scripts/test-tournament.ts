@@ -36,6 +36,7 @@ function buildBracket(): Match[] {
       team_a: a,
       team_b: b,
       winner,
+      starts_at: null,
       is_locked: true,
       created_at: "",
       updated_at: "",

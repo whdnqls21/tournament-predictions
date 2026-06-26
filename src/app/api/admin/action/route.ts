@@ -4,6 +4,7 @@ import { isAdmin } from "@/lib/auth";
 import { ROUND_ORDER, type RoundKey } from "@/lib/rounds";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
+  matchClosed,
   nextStageAssignments,
   roundFullyResulted,
   ROUND_SLOT_COUNT,
@@ -17,6 +18,16 @@ export const dynamic = "force-dynamic";
 
 const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
 const NON_FINAL_ROUNDS: RoundKey[] = ["R32", "R16", "R8", "SF"];
+
+// 시작 시간 입력값(ISO 문자열 또는 빈값/널)을 검증해 ISO 문자열|null 로 정규화.
+// 잘못된 형식이면 undefined 를 돌려 호출부에서 거부하게 한다.
+function normalizeStartsAt(value: unknown): string | null | undefined {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "string") return undefined;
+  const t = new Date(value).getTime();
+  if (Number.isNaN(t)) return undefined;
+  return new Date(t).toISOString();
+}
 
 async function fetchMatches(sb: ReturnType<typeof createServiceClient>): Promise<Match[]> {
   const { data } = await sb.from("matches").select("*");
@@ -84,18 +95,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const rows: Pick<Match, "round" | "bracket_slot" | "team_a" | "team_b">[] = [];
-    matchups.forEach((pair: [string, string], slot: number) => {
+    // 경기별 시작 시간(선택) — 32강 16경기에 대응하는 배열. 빈값은 미정(null).
+    const starts = Array.isArray(body?.starts) ? body.starts : [];
+
+    const rows: Pick<
+      Match,
+      "round" | "bracket_slot" | "team_a" | "team_b" | "starts_at"
+    >[] = [];
+    for (let slot = 0; slot < matchups.length; slot++) {
+      const pair = matchups[slot] as [string, string];
+      const startsAt = normalizeStartsAt(starts[slot]);
+      if (startsAt === undefined) {
+        return NextResponse.json(
+          { error: `${slot + 1}번 경기의 시작 시간 형식이 올바르지 않습니다.` },
+          { status: 400 }
+        );
+      }
       rows.push({
         round: "R32",
         bracket_slot: slot,
         team_a: pair[0].trim(),
         team_b: pair[1].trim(),
+        starts_at: startsAt,
       });
-    });
+    }
     for (const round of ["R16", "R8", "SF", "FINAL", "THIRD"] as RoundKey[]) {
       for (let slot = 0; slot < ROUND_SLOT_COUNT[round]; slot++) {
-        rows.push({ round, bracket_slot: slot, team_a: null, team_b: null });
+        rows.push({ round, bracket_slot: slot, team_a: null, team_b: null, starts_at: null });
       }
     }
     const { error: insErr } = await sb.from("matches").insert(rows);
@@ -154,6 +180,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  // ── 경기 시작 시간 설정 (한 경기) ──────────────────────────────────
+  if (action === "schedule") {
+    const matchId = body?.matchId;
+    if (typeof matchId !== "string") {
+      return NextResponse.json({ error: "경기를 확인하세요." }, { status: 400 });
+    }
+    const startsAt = normalizeStartsAt(body?.startsAt);
+    if (startsAt === undefined) {
+      return NextResponse.json({ error: "시작 시간 형식이 올바르지 않습니다." }, { status: 400 });
+    }
+    const { error } = await sb
+      .from("matches")
+      .update({ starts_at: startsAt })
+      .eq("id", matchId);
+    if (error) {
+      console.error("schedule 실패", error);
+      return NextResponse.json({ error: "시작 시간 저장에 실패했습니다." }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   // ── 강제 마감 (라운드 잠금) ────────────────────────────────────────
   if (action === "lock") {
     const round = body?.round;
@@ -194,9 +241,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "팀이 아직 정해지지 않았습니다." }, { status: 400 });
     if (winner !== match.team_a && winner !== match.team_b)
       return NextResponse.json({ error: "두 팀 중 하나만 선택할 수 있습니다." }, { status: 400 });
-    if (!match.is_locked)
+    if (!matchClosed(match, Date.now()))
       return NextResponse.json(
-        { error: "먼저 이 라운드를 마감(잠금)한 뒤 결과를 입력하세요." },
+        { error: "아직 예측 마감 전입니다. 시작 시간이 지났거나 강제 마감한 뒤 결과를 입력하세요." },
         { status: 400 }
       );
 
@@ -255,7 +302,7 @@ export async function POST(req: NextRequest) {
         await sb.from("predictions").delete().in("match_id", nextMatchIds);
         await sb
           .from("matches")
-          .update({ team_a: null, team_b: null, winner: null, is_locked: false })
+          .update({ team_a: null, team_b: null, winner: null, is_locked: false, starts_at: null })
           .in("id", nextMatchIds);
       }
     }

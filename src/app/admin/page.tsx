@@ -7,7 +7,9 @@ import { Card } from "@/components/Card";
 import { postJSON } from "@/lib/client-api";
 import { ROUNDS, type RoundKey } from "@/lib/rounds";
 import type { AdminState } from "@/lib/state";
-import { matchesInRound } from "@/lib/tournament";
+import { isoToLocalInput, localInputToIso } from "@/lib/time";
+import { matchClosed, matchesInRound } from "@/lib/tournament";
+import type { Match } from "@/lib/types";
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -280,79 +282,132 @@ function RoundBlock({
   busy: boolean;
 }) {
   const matches = matchesInRound(admin.matches, round);
-  const locked = matches.length > 0 && matches.every((m) => m.is_locked);
-  const resulted = matches.every((m) => m.winner);
-  const confirm = admin.confirmByRound[round] ?? {};
+  const resulted = matches.length > 0 && matches.every((m) => m.winner);
 
   return (
     <div className="rounded-xl border border-pitch-line bg-black/10 p-3">
       <div className="mb-2 flex items-center justify-between">
         <span className="font-display text-base text-ink">{ROUNDS[round].label}</span>
-        <span className="text-xs text-ink-faint">
-          {!locked ? "예측 중" : resulted ? "결과 완료" : "결과 입력 대기"}
+        <span className="text-xs text-ink-faint">{resulted ? "결과 완료" : "진행 중"}</span>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {matches.map((m) => (
+          <MatchAdminRow key={m.id} match={m} admin={admin} run={run} busy={busy} />
+        ))}
+      </div>
+
+      <button
+        disabled={busy}
+        onClick={() => run(() => postJSON("/api/admin/action", { action: "lock", round }))}
+        className="mt-2 w-full rounded-lg border border-gold/50 bg-gold/10 py-2 text-xs text-gold disabled:opacity-40"
+      >
+        🔒 이 라운드 즉시 강제 마감 (시간과 무관하게)
+      </button>
+    </div>
+  );
+}
+
+function MatchAdminRow({
+  match,
+  admin,
+  run,
+  busy,
+}: {
+  match: Match;
+  admin: AdminState;
+  run: (fn: () => Promise<unknown>) => Promise<void>;
+  busy: boolean;
+}) {
+  const [when, setWhen] = useState(isoToLocalInput(match.starts_at));
+  const closed = matchClosed(match, Date.now());
+  const saved = admin.savedByMatch?.[match.id] ?? [];
+
+  return (
+    <div className="rounded-lg border border-pitch-line bg-black/10 p-2.5">
+      <div className="mb-2 flex items-center justify-between text-xs">
+        <span className="truncate font-display text-ink">
+          {match.team_a ?? "미정"} <span className="text-ink-faint">vs</span>{" "}
+          {match.team_b ?? "미정"}
+        </span>
+        <span className={closed ? "text-gold" : "text-ink-faint"}>
+          {match.winner ? "결과 완료" : closed ? "🔒 마감" : "예측 중"}
         </span>
       </div>
 
-      {!locked ? (
-        <>
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {admin.participants.map((p) => (
-              <span
-                key={p.id}
-                className={`rounded-full px-2 py-0.5 text-xs ${
-                  confirm[p.id]
-                    ? "bg-grass/15 text-grass"
-                    : "border border-pitch-line text-ink-faint"
+      {/* 시작 시간 설정 */}
+      <div className="mb-2 flex items-center gap-2">
+        <input
+          type="datetime-local"
+          value={when}
+          onChange={(e) => setWhen(e.target.value)}
+          className="tabular w-full rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-xs text-ink outline-none focus:border-grass"
+        />
+        <button
+          disabled={busy}
+          onClick={() =>
+            run(() =>
+              postJSON("/api/admin/action", {
+                action: "schedule",
+                matchId: match.id,
+                startsAt: localInputToIso(when),
+              })
+            )
+          }
+          className="shrink-0 rounded-lg bg-grass/90 px-3 py-1.5 text-xs text-pitch-base disabled:opacity-40"
+        >
+          시간 저장
+        </button>
+      </div>
+
+      {/* 마감 전: 누가 저장했는지 / 마감 후: 진출 팀 선택 */}
+      {!closed ? (
+        <div className="flex flex-wrap gap-1.5">
+          {admin.participants.map((p) => (
+            <span
+              key={p.id}
+              className={`rounded-full px-2 py-0.5 text-[10px] ${
+                saved.includes(p.id)
+                  ? "bg-grass/15 text-grass"
+                  : "border border-pitch-line text-ink-faint"
+              }`}
+            >
+              {p.name} {saved.includes(p.id) ? "저장✓" : "…"}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {[match.team_a, match.team_b].map((team, idx) =>
+            team ? (
+              <button
+                key={team}
+                disabled={busy}
+                onClick={() =>
+                  run(() =>
+                    postJSON("/api/admin/action", {
+                      action: "result",
+                      matchId: match.id,
+                      winner: team,
+                    })
+                  )
+                }
+                className={`truncate rounded-lg border py-2 text-sm disabled:opacity-40 ${
+                  match.winner === team
+                    ? "border-grass bg-grass/15 text-grass"
+                    : "border-pitch-line text-ink hover:border-grass/40"
                 }`}
               >
-                {p.name} {confirm[p.id] ? "✓" : "…"}
-              </span>
-            ))}
-          </div>
-          <button
-            disabled={busy}
-            onClick={() =>
-              run(() => postJSON("/api/admin/action", { action: "lock", round }))
-            }
-            className="w-full rounded-lg border border-gold/50 bg-gold/10 py-2 text-sm text-gold disabled:opacity-40"
-          >
-            🔒 이 라운드 강제 마감
-          </button>
-        </>
-      ) : (
-        <div className="flex flex-col gap-2">
-          <p className="text-xs text-ink-faint">진출(승리)한 팀을 누르세요.</p>
-          {matches.map((m) => (
-            <div key={m.id} className="grid grid-cols-2 gap-2">
-              {[m.team_a, m.team_b].map((team) =>
-                team ? (
-                  <button
-                    key={team}
-                    disabled={busy}
-                    onClick={() =>
-                      run(() =>
-                        postJSON("/api/admin/action", {
-                          action: "result",
-                          matchId: m.id,
-                          winner: team,
-                        })
-                      )
-                    }
-                    className={`truncate rounded-lg border py-2 text-sm disabled:opacity-40 ${
-                      m.winner === team
-                        ? "border-grass bg-grass/15 text-grass"
-                        : "border-pitch-line text-ink hover:border-grass/40"
-                    }`}
-                  >
-                    {team}
-                    {m.winner === team && " ✓"}
-                  </button>
-                ) : (
-                  <div key="x" className="rounded-lg border border-dashed border-pitch-line" />
-                )
-              )}
-            </div>
-          ))}
+                {team}
+                {match.winner === team && " ✓"}
+              </button>
+            ) : (
+              <div
+                key={idx}
+                className="rounded-lg border border-dashed border-pitch-line"
+              />
+            )
+          )}
         </div>
       )}
     </div>
@@ -406,6 +461,7 @@ function SetupForm({
   const [matchups, setMatchups] = useState<string[][]>(
     Array.from({ length: 16 }, () => ["", ""])
   );
+  const [starts, setStarts] = useState<string[]>(Array.from({ length: 16 }, () => ""));
   const [pins, setPins] = useState<Record<string, string>>({});
 
   const allFilled = matchups.every((p) => p[0].trim() && p[1].trim());
@@ -417,34 +473,53 @@ function SetupForm({
       return next;
     });
 
+  const setStart = (i: number, value: string) =>
+    setStarts((s) => {
+      const next = [...s];
+      next[i] = value;
+      return next;
+    });
+
   return (
     <Card className="flex flex-col gap-4">
       {!force && (
         <div>
           <h2 className="font-display text-lg text-ink">32강 대진 셋업</h2>
           <p className="mt-1 text-xs text-ink-faint">
-            16경기의 두 팀을 입력하세요. (브라켓 위→아래 순서)
+            16경기의 두 팀과 시작 시간을 입력하세요. (브라켓 위→아래 순서) 시간은 선택이며,
+            지정하면 그 시각에 예측이 자동 마감됩니다.
           </p>
         </div>
       )}
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3">
         {matchups.map((pair, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <span className="w-7 text-right text-xs text-ink-faint">{i + 1}</span>
-            <input
-              value={pair[0]}
-              onChange={(e) => setTeam(i, 0, e.target.value)}
-              placeholder="팀 A"
-              className="w-full rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-sm text-ink outline-none focus:border-grass"
-            />
-            <span className="text-xs text-ink-faint">vs</span>
-            <input
-              value={pair[1]}
-              onChange={(e) => setTeam(i, 1, e.target.value)}
-              placeholder="팀 B"
-              className="w-full rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-sm text-ink outline-none focus:border-grass"
-            />
+          <div key={i} className="flex flex-col gap-1.5 rounded-lg border border-pitch-line/60 p-2">
+            <div className="flex items-center gap-2">
+              <span className="w-7 text-right text-xs text-ink-faint">{i + 1}</span>
+              <input
+                value={pair[0]}
+                onChange={(e) => setTeam(i, 0, e.target.value)}
+                placeholder="팀 A"
+                className="w-full rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-sm text-ink outline-none focus:border-grass"
+              />
+              <span className="text-xs text-ink-faint">vs</span>
+              <input
+                value={pair[1]}
+                onChange={(e) => setTeam(i, 1, e.target.value)}
+                placeholder="팀 B"
+                className="w-full rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-sm text-ink outline-none focus:border-grass"
+              />
+            </div>
+            <div className="flex items-center gap-2 pl-9">
+              <span className="text-[11px] text-ink-faint">시작</span>
+              <input
+                type="datetime-local"
+                value={starts[i]}
+                onChange={(e) => setStart(i, e.target.value)}
+                className="tabular w-full rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-xs text-ink outline-none focus:border-grass"
+              />
+            </div>
           </div>
         ))}
       </div>
@@ -479,6 +554,7 @@ function SetupForm({
             postJSON("/api/admin/action", {
               action: "setup",
               matchups,
+              starts: starts.map((v) => localInputToIso(v)),
               pins,
               force,
             })

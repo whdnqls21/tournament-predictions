@@ -3,6 +3,7 @@
 import { Card } from "@/components/Card";
 import { useAppState } from "@/components/StateProvider";
 import { ROUND_ORDER, ROUNDS } from "@/lib/rounds";
+import { formatKickoff } from "@/lib/time";
 import { matchesInRound } from "@/lib/tournament";
 import type { Match } from "@/lib/types";
 
@@ -56,6 +57,7 @@ function BracketMatch({ match }: { match: Match }) {
   const { state } = useAppState();
   const myPick = state?.myPredictions[match.id]?.picked_team ?? null;
   const revealed = state?.revealed[match.id] ?? [];
+  const closed = state?.closedMatches.includes(match.id) ?? false;
 
   const row = (team: string | null) => {
     if (!team) {
@@ -96,12 +98,17 @@ function BracketMatch({ match }: { match: Match }) {
 
   return (
     <div className="overflow-hidden rounded-xl border border-pitch-line bg-black/10">
+      {(match.team_a || match.team_b) && match.starts_at && (
+        <div className="border-b border-pitch-line px-3 py-1 text-[10px] text-ink-faint">
+          ⏰ {formatKickoff(match.starts_at)}
+        </div>
+      )}
       {row(match.team_a)}
       <div className="h-px bg-pitch-line" />
       {row(match.team_b)}
 
-      {/* 마감된 라운드는 4명 예측 공개 (§6) */}
-      {match.is_locked && revealed.length > 0 && (
+      {/* 마감된 경기는 4명 예측 공개 (§6) */}
+      {closed && revealed.length > 0 && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-pitch-line bg-black/20 px-3 py-1.5 text-[11px] text-ink-dim">
           {revealed.map((r) => {
             const correct = match.winner ? r.picked_team === match.winner : null;

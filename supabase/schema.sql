@@ -76,7 +76,8 @@ create table public.matches (
   team_a       text,                              -- 다음 라운드는 진출 결과로 채워지므로 null 허용
   team_b       text,
   winner       text,                              -- null = 결과 미입력
-  is_locked    boolean not null default false,    -- 예측 마감 여부
+  starts_at    timestamptz,                       -- 경기 시작 시간 (null = 미정). 이 시각이 지나면 예측 자동 마감.
+  is_locked    boolean not null default false,    -- 예측 수동 마감 여부 (관리자 강제 마감)
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
   constraint matches_round_valid check (round in ('R32','R16','R8','SF','FINAL','THIRD')),

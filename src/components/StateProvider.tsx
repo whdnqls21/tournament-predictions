@@ -47,6 +47,10 @@ export function StateProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refresh();
+    // 경기 시작 시간이 지나면 예측이 자동 마감되므로, 주기적으로 새로고침해
+    // 마감/공개 상태를 최신으로 유지한다(탭이 열려 있어도 반영).
+    const id = setInterval(refresh, 30_000);
+    return () => clearInterval(id);
   }, [refresh]);
 
   return <Ctx.Provider value={{ state, loading, error, refresh }}>{children}</Ctx.Provider>;

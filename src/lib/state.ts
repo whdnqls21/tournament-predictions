@@ -8,6 +8,7 @@ import {
   activeStage,
   computeGifts,
   computeStandings,
+  matchClosed,
   matchesInRound,
   type GiftEdge,
   type Standing,
@@ -75,6 +76,12 @@ export interface ParticipantState {
   // 마감된 경기만 공개 (§2). key = matchId.
   revealed: Record<string, { participantId: string; name: string; picked_team: string }[]>;
   confirmByRound: Record<string, Record<string, boolean>>;
+  // 마감(시간 경과/수동 잠금)된 경기 id 목록 — 클라 버튼 비활성·공개 판정용.
+  closedMatches: string[];
+  // 마감 전, 경기별로 "저장(픽)한" 참가자 id 목록 (픽 내용은 숨김, §2).
+  savedByMatch: Record<string, string[]>;
+  // 서버 기준 현재 시각(epoch ms) — 클라가 시작 시간 카운트다운/마감 판정에 사용.
+  serverNow: number;
   standings: Standing[];
   gifts: GiftEdge[];
 }
@@ -97,17 +104,25 @@ export async function buildParticipantState(): Promise<ParticipantState> {
     }
   }
 
-  // 마감(is_locked)된 경기만 모두의 예측 공개
+  const now = Date.now();
+
+  // 마감(시간 경과 또는 수동 잠금)된 경기만 모두의 예측 공개.
+  // 마감 전 경기는 "누가 저장했는지"만 노출(픽 내용은 숨김, §2).
   const revealed: ParticipantState["revealed"] = {};
+  const closedMatches: string[] = [];
+  const savedByMatch: ParticipantState["savedByMatch"] = {};
   for (const m of matches) {
-    if (!m.is_locked) continue;
-    revealed[m.id] = predictions
-      .filter((p) => p.match_id === m.id)
-      .map((p) => ({
+    const mine = predictions.filter((p) => p.match_id === m.id);
+    if (matchClosed(m, now)) {
+      closedMatches.push(m.id);
+      revealed[m.id] = mine.map((p) => ({
         participantId: p.participant_id,
         name: nameById.get(p.participant_id) ?? "",
         picked_team: p.picked_team,
       }));
+    } else {
+      savedByMatch[m.id] = mine.filter((p) => p.confirmed).map((p) => p.participant_id);
+    }
   }
 
   const standings = computeStandings(participants, matches, predictions);
@@ -129,6 +144,9 @@ export async function buildParticipantState(): Promise<ParticipantState> {
     myPredictions,
     revealed,
     confirmByRound: confirmByRound(participants, matches, predictions),
+    closedMatches,
+    savedByMatch,
+    serverNow: now,
     standings,
     gifts,
   };
@@ -143,6 +161,8 @@ export interface AdminState {
   participants: { id: string; name: string; display_order: number; hasPin: boolean }[];
   matches: Match[];
   confirmByRound: Record<string, Record<string, boolean>>;
+  // 경기별로 "저장(픽)한" 참가자 id 목록.
+  savedByMatch: Record<string, string[]>;
   standings: Standing[];
 }
 
@@ -164,6 +184,13 @@ export async function buildAdminState(): Promise<AdminState> {
   );
   const predictions = (prRes.data ?? []) as Prediction[];
 
+  const savedByMatch: Record<string, string[]> = {};
+  for (const m of matches) {
+    savedByMatch[m.id] = predictions
+      .filter((p) => p.match_id === m.id && p.confirmed)
+      .map((p) => p.participant_id);
+  }
+
   return {
     setupDone: settings?.setup_done ?? false,
     adminPinSet: !!settings?.admin_pin_hash,
@@ -178,6 +205,7 @@ export async function buildAdminState(): Promise<AdminState> {
     })),
     matches,
     confirmByRound: confirmByRound(participants, matches, predictions),
+    savedByMatch,
     standings: computeStandings(participants, matches, predictions),
   };
 }
