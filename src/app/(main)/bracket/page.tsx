@@ -1,11 +1,12 @@
 "use client";
 
-import { Card } from "@/components/Card";
 import { useAppState } from "@/components/StateProvider";
-import { ROUND_ORDER, ROUNDS } from "@/lib/rounds";
-import { formatKickoff } from "@/lib/time";
-import { matchesInRound } from "@/lib/tournament";
+import { ROUNDS, type RoundKey } from "@/lib/rounds";
+import { getMatch, ROUND_SLOT_COUNT } from "@/lib/tournament";
 import type { Match } from "@/lib/types";
+
+// 좌 → 우 진행 순서. 32강 슬롯 0,1 승자 → 16강 슬롯 0 … 식으로 좁혀진다.
+const TREE: RoundKey[] = ["R32", "R16", "R8", "SF", "FINAL"];
 
 export default function BracketPage() {
   const { state } = useAppState();
@@ -20,7 +21,7 @@ export default function BracketPage() {
 
       <div className="flex items-center gap-3 text-[11px] text-ink-dim">
         <span className="flex items-center gap-1">
-          <i className="inline-block h-2.5 w-2.5 rounded-full bg-grass" /> 내 예측 적중
+          <i className="inline-block h-2.5 w-2.5 rounded-full bg-grass" /> 적중
         </span>
         <span className="flex items-center gap-1">
           <i className="inline-block h-2.5 w-2.5 rounded-full bg-danger" /> 빗나감
@@ -28,48 +29,60 @@ export default function BracketPage() {
         <span className="flex items-center gap-1">
           <i className="inline-block h-2.5 w-2.5 rounded-full bg-gold" /> 진출
         </span>
+        <span className="ml-auto text-ink-faint">← 좌우로 넘겨보기 →</span>
       </div>
 
-      {ROUND_ORDER.map((round) => {
-        const matches = matchesInRound(state.matches, round);
-        if (matches.length === 0) return null;
-        const def = ROUNDS[round];
-        const hasTeams = matches.some((m) => m.team_a || m.team_b);
-        return (
-          <Card key={round} className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <h2 className="font-display text-base text-ink">{def.label}</h2>
-              {!hasTeams && <span className="text-xs text-ink-faint">미정</span>}
+      <div className="-mx-4 overflow-x-auto px-4 pb-2">
+        <div className="bracket">
+          {TREE.map((round) => {
+            const conn = round !== "FINAL";
+            return (
+              <div key={round} className="bracket-col">
+                <div className="bracket-head font-display text-sm text-ink">
+                  {ROUNDS[round].label}
+                </div>
+                <div className={`bracket-cells${conn ? " bracket-cells-conn" : ""}`}>
+                  {Array.from({ length: ROUND_SLOT_COUNT[round] }, (_, slot) => (
+                    <div key={slot} className="bracket-cell">
+                      <BracketNode match={getMatch(state.matches, round, slot)} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* 3·4위전 — 트리 밖 별도 칸 */}
+          <div className="bracket-col">
+            <div className="bracket-head font-display text-sm text-ink">3·4위</div>
+            <div className="bracket-cells">
+              <div className="bracket-cell">
+                <BracketNode match={getMatch(state.matches, "THIRD", 0)} />
+              </div>
             </div>
-            <div className="flex flex-col gap-2">
-              {matches.map((m) => (
-                <BracketMatch key={m.id} match={m} />
-              ))}
-            </div>
-          </Card>
-        );
-      })}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-function BracketMatch({ match }: { match: Match }) {
+function BracketNode({ match }: { match: Match | undefined }) {
   const { state } = useAppState();
-  const myPick = state?.myPredictions[match.id]?.picked_team ?? null;
-  const revealed = state?.revealed[match.id] ?? [];
-  const closed = state?.closedMatches.includes(match.id) ?? false;
+  const myPick = match ? state?.myPredictions[match.id]?.picked_team ?? null : null;
+  const winner = match?.winner ?? null;
 
   const row = (team: string | null) => {
     if (!team) {
-      return <div className="px-3 py-2 text-sm text-ink-faint">미정</div>;
+      return <div className="px-2 py-1.5 text-xs text-ink-faint">미정</div>;
     }
-    const isWinner = match.winner === team;
+    const isWinner = winner === team;
     const mine = myPick === team;
     let mark = "";
     let color = "text-ink";
     if (mine) {
-      if (match.winner) {
-        const correct = team === match.winner;
+      if (winner) {
+        const correct = team === winner;
         color = correct ? "text-grass" : "text-danger";
         mark = correct ? "✓" : "✗";
       } else {
@@ -79,50 +92,20 @@ function BracketMatch({ match }: { match: Match }) {
     }
     return (
       <div
-        className={`flex items-center justify-between px-3 py-2 text-sm ${
-          isWinner ? "bg-gold/10" : ""
-        }`}
+        className={`flex items-center gap-1 px-2 py-1.5 text-xs ${isWinner ? "bg-gold/10" : ""}`}
       >
-        <span className={`truncate ${color} ${isWinner ? "font-medium" : ""}`}>
-          {mine && <span className="mr-1 text-[10px]">{mark}</span>}
-          {team}
-        </span>
-        {isWinner && (
-          <span className="ml-2 shrink-0 rounded-full bg-gold/20 px-2 py-0.5 text-[10px] text-gold">
-            진출
-          </span>
-        )}
+        {mine && <span className="shrink-0 text-[9px]">{mark}</span>}
+        <span className={`truncate ${color} ${isWinner ? "font-medium" : ""}`}>{team}</span>
+        {isWinner && <span className="ml-auto shrink-0 text-[9px] text-gold">진출</span>}
       </div>
     );
   };
 
   return (
-    <div className="overflow-hidden rounded-xl border border-pitch-line bg-black/10">
-      {(match.team_a || match.team_b) && match.starts_at && (
-        <div className="border-b border-pitch-line px-3 py-1 text-[10px] text-ink-faint">
-          ⏰ {formatKickoff(match.starts_at)}
-        </div>
-      )}
-      {row(match.team_a)}
+    <div className="w-full overflow-hidden rounded-lg border border-pitch-line bg-black/20">
+      {row(match?.team_a ?? null)}
       <div className="h-px bg-pitch-line" />
-      {row(match.team_b)}
-
-      {/* 마감된 경기는 4명 예측 공개 (§6) */}
-      {closed && revealed.length > 0 && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-pitch-line bg-black/20 px-3 py-1.5 text-[11px] text-ink-dim">
-          {revealed.map((r) => {
-            const correct = match.winner ? r.picked_team === match.winner : null;
-            return (
-              <span key={r.participantId}>
-                {r.name}:{" "}
-                <span className={correct === null ? "" : correct ? "text-grass" : "text-danger"}>
-                  {r.picked_team}
-                </span>
-              </span>
-            );
-          })}
-        </div>
-      )}
+      {row(match?.team_b ?? null)}
     </div>
   );
 }

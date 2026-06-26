@@ -59,3 +59,55 @@ body {
   background: rgba(255, 255, 255, 0.08);
   border-radius: 999px;
 }
+
+/* ── 대진표 브라켓 (좌우 스크롤, 라운드별 컬럼) ───────────────────── */
+.bracket {
+  display: inline-flex;
+  align-items: stretch;
+  min-height: 52rem; /* 32강 16경기 세로 확보 */
+  padding: 0.25rem 0;
+}
+.bracket-col {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  width: 9rem;
+}
+.bracket-head {
+  height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.bracket-cells {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+.bracket-cell {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  padding-right: 1.1rem; /* 커넥터 공간 */
+}
+/* 오른쪽 가로 커넥터 */
+.bracket-cells-conn .bracket-cell::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 1.1rem;
+  height: 2px;
+  background: var(--line);
+}
+/* 짝 연결 세로선: 위쪽(홀수) 셀 중앙 → 아래 짝 셀 중앙 */
+.bracket-cells-conn .bracket-cell:nth-child(odd)::before {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 2px;
+  height: 100%;
+  background: var(--line);
+}

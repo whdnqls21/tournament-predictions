@@ -195,10 +195,15 @@ function RoundSection({
   if (!state) return null;
 
   const def = ROUNDS[round];
-  // 양 팀이 정해진 경기만 (아직 대진 미정인 슬롯은 숨김).
-  const matches = matchesInRound(state.matches, round).filter(
-    (m) => m.team_a && m.team_b
-  );
+  // 양 팀이 정해진 경기만 (아직 대진 미정인 슬롯은 숨김) + 시작 시간 오름차순.
+  const matches = matchesInRound(state.matches, round)
+    .filter((m) => m.team_a && m.team_b)
+    .sort((a, b) => {
+      const ta = a.starts_at ? new Date(a.starts_at).getTime() : Infinity;
+      const tb = b.starts_at ? new Date(b.starts_at).getTime() : Infinity;
+      if (ta !== tb) return ta - tb; // 시간 미정(null)은 뒤로
+      return a.bracket_slot - b.bracket_slot;
+    });
   if (matches.length === 0) return null;
 
   return (
