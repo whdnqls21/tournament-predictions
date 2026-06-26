@@ -24,6 +24,7 @@ export default function PredictPage() {
   const { state, refresh } = useAppState();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPin, setShowPin] = useState(false);
 
   if (!state || !state.session) return null;
   const me = state.session;
@@ -53,13 +54,23 @@ export default function PredictPage() {
           <p className="text-xs uppercase tracking-[0.2em] text-grass">예측</p>
           <h1 className="font-display text-2xl text-ink">{me.name}님</h1>
         </div>
-        <button
-          onClick={() => run(() => postJSON("/api/auth/logout", {}))}
-          className="rounded-full border border-pitch-line px-3 py-1 text-xs text-ink-dim hover:text-ink"
-        >
-          로그아웃
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowPin((v) => !v)}
+            className="rounded-full border border-pitch-line px-3 py-1 text-xs text-ink-dim hover:text-ink"
+          >
+            PIN 변경
+          </button>
+          <button
+            onClick={() => run(() => postJSON("/api/auth/logout", {}))}
+            className="rounded-full border border-pitch-line px-3 py-1 text-xs text-ink-dim hover:text-ink"
+          >
+            로그아웃
+          </button>
+        </div>
       </div>
+
+      {showPin && <ChangePinCard onClose={() => setShowPin(false)} />}
 
       {error && (
         <div className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-2 text-sm text-danger">
@@ -81,6 +92,92 @@ export default function PredictPage() {
         <RoundSection key={round} round={round} busy={busy} run={run} />
       ))}
     </div>
+  );
+}
+
+function ChangePinCard({ onClose }: { onClose: () => void }) {
+  const [cur, setCur] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  const onlyDigits = (v: string) => v.replace(/\D/g, "").slice(0, 4);
+  const valid = cur.length === 4 && next.length === 4 && confirm.length === 4;
+
+  async function submit() {
+    if (!valid) return;
+    if (next !== confirm) {
+      setError("새 PIN이 서로 일치하지 않아요.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await postJSON("/api/auth/change-pin", { currentPin: cur, newPin: next });
+      setDone(true);
+      setCur("");
+      setNext("");
+      setConfirm("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "변경 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const pinInput = (
+    value: string,
+    setValue: (v: string) => void,
+    placeholder: string,
+    autoFocus = false
+  ) => (
+    <input
+      autoFocus={autoFocus}
+      type="password"
+      inputMode="numeric"
+      pattern="\d*"
+      maxLength={4}
+      value={value}
+      onChange={(e) => {
+        setValue(onlyDigits(e.target.value));
+        setDone(false);
+        setError(null);
+      }}
+      placeholder={placeholder}
+      className="tabular w-full rounded-lg border border-pitch-line bg-black/20 px-3 py-2 text-center text-lg tracking-[0.3em] text-ink outline-none focus:border-grass"
+    />
+  );
+
+  return (
+    <Card className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h2 className="font-display text-base text-ink">PIN 변경</h2>
+        <button onClick={onClose} className="text-xs text-ink-faint hover:text-ink">
+          닫기
+        </button>
+      </div>
+
+      {done ? (
+        <p className="text-center text-sm text-grass">✓ PIN이 변경되었어요.</p>
+      ) : (
+        <>
+          {pinInput(cur, setCur, "현재 PIN", true)}
+          {pinInput(next, setNext, "새 PIN")}
+          {pinInput(confirm, setConfirm, "새 PIN 확인")}
+          <button
+            onClick={submit}
+            disabled={!valid || busy}
+            className="rounded-xl bg-grass py-2.5 font-display text-base text-pitch-base disabled:opacity-40"
+          >
+            {busy ? "변경 중…" : "변경"}
+          </button>
+        </>
+      )}
+
+      {error && <p className="text-center text-sm text-danger">{error}</p>}
+    </Card>
   );
 }
 
