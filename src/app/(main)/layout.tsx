@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Card } from "@/components/Card";
@@ -37,12 +36,6 @@ function Gate({ children }: { children: ReactNode }) {
         <p className="max-w-[18rem] text-sm text-ink-dim">
           관리자가 32강 대진을 셋업하면 예측을 시작할 수 있어요.
         </p>
-        <Link
-          href="/admin"
-          className="mt-1 rounded-full border border-gold/40 bg-gold/10 px-4 py-2 text-sm text-gold"
-        >
-          관리자로 셋업하기 →
-        </Link>
       </Card>
     );
   }
