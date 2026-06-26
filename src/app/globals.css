@@ -8,6 +8,7 @@
   --grass: #46e08a;
   --gold: #f4c64e;
   --line: rgba(255, 255, 255, 0.07);
+  --bracket-line: rgba(255, 255, 255, 0.28);
   --text: #eaf5ef;
   --text-dim: #9db4a9;
 }
@@ -102,25 +103,7 @@ body {
   top: 50%;
   width: 1.6rem;
   height: 2px;
-  background: var(--line);
-}
-/* 4강 → 결승 연결: 3·4위전 칸을 가로지르는 중앙선 */
-.bracket-bridge {
-  position: relative;
-}
-.bracket-bridge::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 2px;
-  background: var(--line);
-}
-/* 3·4위전 노드는 아래쪽으로 (중앙 연결선과 겹치지 않게) */
-.bracket-cell--low {
-  align-items: flex-end;
-  padding-bottom: 1.5rem;
+  background: var(--bracket-line);
 }
 /* 짝 연결 세로선: 위쪽(홀수) 셀 중앙 → 아래 짝 셀 중앙 */
 .bracket-cells-conn .bracket-cell:nth-child(odd)::before {
@@ -130,5 +113,25 @@ body {
   top: 50%;
   width: 2px;
   height: 100%;
-  background: var(--line);
+  background: var(--bracket-line);
+}
+
+/* 4강 열 안, 두 경기 사이(중앙)에 3·4위전 박스를 겹쳐 놓는다 */
+.bracket-cells-sf {
+  position: relative;
+}
+.bracket-third {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  padding-left: 1.3rem;
+  padding-right: 1.6rem;
+}
+.bracket-third-label {
+  margin-bottom: 3px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-dim);
 }
