@@ -10,8 +10,9 @@ export async function GET() {
     return NextResponse.json(state);
   } catch (err) {
     console.error("GET /api/state 실패", err);
+    const detail = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      { error: "상태를 불러오지 못했습니다. 환경변수/DB 설정을 확인하세요." },
+      { error: `상태를 불러오지 못했습니다. (${detail}) — /api/health 로 점검하세요.` },
       { status: 500 }
     );
   }

@@ -11,8 +11,14 @@ export function createServiceClient(): SupabaseClient {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) {
+    const missing = [
+      !url && "NEXT_PUBLIC_SUPABASE_URL",
+      !serviceKey && "SUPABASE_SERVICE_ROLE_KEY",
+    ]
+      .filter(Boolean)
+      .join(", ");
     throw new Error(
-      "Supabase 서버 환경변수가 없습니다. .env.local 에 NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 를 설정하세요."
+      `Supabase 서버 환경변수 누락: ${missing}. 로컬은 .env.local, 배포는 Vercel 환경변수에 설정 후 재배포(Redeploy)하세요.`
     );
   }
 

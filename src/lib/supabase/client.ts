@@ -14,7 +14,7 @@ export function getBrowserClient(): SupabaseClient {
 
   if (!url || !anonKey) {
     throw new Error(
-      "Supabase 환경변수가 없습니다. .env.local 에 NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY 를 설정하세요."
+      "Supabase 환경변수가 없습니다(NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY). 로컬은 .env.local, 배포는 Vercel 환경변수에 설정 후 재배포(Redeploy)하세요."
     );
   }
 

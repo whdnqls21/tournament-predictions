@@ -14,6 +14,10 @@ export async function GET() {
     return NextResponse.json(state);
   } catch (err) {
     console.error("GET /api/admin/state 실패", err);
-    return NextResponse.json({ error: "상태를 불러오지 못했습니다." }, { status: 500 });
+    const detail = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      { error: `상태를 불러오지 못했습니다. (${detail}) — /api/health 로 점검하세요.` },
+      { status: 500 }
+    );
   }
 }
