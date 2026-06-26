@@ -54,6 +54,7 @@ export default function BracketPage() {
               >
                 {Array.from({ length: ROUND_SLOT_COUNT[round] }, (_, slot) => (
                   <div key={slot} className="bracket-cell">
+                    {round !== "R32" && <span className="bracket-instub" />}
                     <BracketNode match={getMatch(state.matches, round, slot)} />
                   </div>
                 ))}

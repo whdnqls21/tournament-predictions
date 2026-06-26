@@ -115,6 +115,15 @@ body {
   height: 100%;
   background: var(--bracket-line);
 }
+/* 들어오는 가로선: 이전 라운드 합류점 → 이 카드 (R32 제외 모든 라운드) */
+.bracket-instub {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1.3rem;
+  height: 2px;
+  background: var(--bracket-line);
+}
 
 /* 4강 열 안, 두 경기 사이(중앙)에 3·4위전 박스를 겹쳐 놓는다 */
 .bracket-cells-sf {
