@@ -5,6 +5,7 @@ import "./globals.css";
 import FieldBackground from "@/components/FieldBackground";
 import BottomTabs from "@/components/BottomTabs";
 import AppHeader from "@/components/AppHeader";
+import InstallPrompt from "@/components/InstallPrompt";
 
 // §6 디자인 토큰 — 폰트
 const display = Do_Hyeon({
@@ -67,6 +68,7 @@ export default function RootLayout({
         <FieldBackground />
         <div className="relative mx-auto flex min-h-[100dvh] w-full max-w-md flex-col">
           <AppHeader />
+          <InstallPrompt />
           <main className="flex-1 px-4 pb-28 pt-2">{children}</main>
           <BottomTabs />
         </div>

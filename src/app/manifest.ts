@@ -16,7 +16,11 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: "ko",
     icons: [
       { src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
-      { src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
+      // Android 설치(beforeinstallprompt) 조건: 192·512 PNG 필요.
+      { src: "/icon-192", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icon-512", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icon-192", sizes: "192x192", type: "image/png", purpose: "maskable" },
+      { src: "/icon-512", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
 }
