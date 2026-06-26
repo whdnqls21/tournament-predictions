@@ -8,12 +8,13 @@ import type { Match } from "@/lib/types";
 // 좌 → 우 컬럼. 32강 슬롯 0,1 승자 → 16강 슬롯 0 … 식으로 좁혀진다.
 // conn = 오른쪽 짝 커넥터 표시(다음 라운드로 합쳐지는 라운드만).
 // 3·4위전은 결승 바로 왼쪽에 별도 칸으로 둔다.
-const COLS: { round: RoundKey; conn: boolean }[] = [
+// bridge = 4강→결승 중앙선이 이 칸(3·4위전)을 가로지른다. low = 노드를 아래로.
+const COLS: { round: RoundKey; conn: boolean; bridge?: boolean; low?: boolean }[] = [
   { round: "R32", conn: true },
   { round: "R16", conn: true },
   { round: "R8", conn: true },
-  { round: "SF", conn: false },
-  { round: "THIRD", conn: false },
+  { round: "SF", conn: true },
+  { round: "THIRD", conn: false, bridge: true, low: true },
   { round: "FINAL", conn: false },
 ];
 
@@ -43,14 +44,18 @@ export default function BracketPage() {
 
       <div className="-mx-4 overflow-x-auto px-4 pb-2">
         <div className="bracket">
-          {COLS.map(({ round, conn }) => (
+          {COLS.map(({ round, conn, bridge, low }) => (
             <div key={round} className="bracket-col">
               <div className="bracket-head font-display text-sm text-ink">
                 {ROUNDS[round].label}
               </div>
-              <div className={`bracket-cells${conn ? " bracket-cells-conn" : ""}`}>
+              <div
+                className={`bracket-cells${conn ? " bracket-cells-conn" : ""}${
+                  bridge ? " bracket-bridge" : ""
+                }`}
+              >
                 {Array.from({ length: ROUND_SLOT_COUNT[round] }, (_, slot) => (
-                  <div key={slot} className="bracket-cell">
+                  <div key={slot} className={`bracket-cell${low ? " bracket-cell--low" : ""}`}>
                     <BracketNode match={getMatch(state.matches, round, slot)} />
                   </div>
                 ))}

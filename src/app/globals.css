@@ -71,7 +71,7 @@ body {
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
-  width: 10.5rem;
+  width: 11.5rem;
 }
 .bracket-head {
   height: 1.75rem;
@@ -89,11 +89,12 @@ body {
   display: flex;
   flex: 1 1 0;
   align-items: center;
+  padding-left: 1.3rem; /* 선과 블럭 사이 가로 간격 */
   padding-right: 1.6rem; /* 컬럼 사이 가로 간격(커넥터 공간) */
-  padding-top: 0.4rem; /* 카드 사이 세로 간격 */
-  padding-bottom: 0.4rem;
+  padding-top: 0.55rem; /* 카드 사이 세로 간격 */
+  padding-bottom: 0.55rem;
 }
-/* 오른쪽 가로 커넥터 */
+/* 오른쪽 가로 커넥터 (카드 오른쪽 → 컬럼 끝) */
 .bracket-cells-conn .bracket-cell::after {
   content: "";
   position: absolute;
@@ -102,6 +103,24 @@ body {
   width: 1.6rem;
   height: 2px;
   background: var(--line);
+}
+/* 4강 → 결승 연결: 3·4위전 칸을 가로지르는 중앙선 */
+.bracket-bridge {
+  position: relative;
+}
+.bracket-bridge::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  background: var(--line);
+}
+/* 3·4위전 노드는 아래쪽으로 (중앙 연결선과 겹치지 않게) */
+.bracket-cell--low {
+  align-items: flex-end;
+  padding-bottom: 1.5rem;
 }
 /* 짝 연결 세로선: 위쪽(홀수) 셀 중앙 → 아래 짝 셀 중앙 */
 .bracket-cells-conn .bracket-cell:nth-child(odd)::before {
