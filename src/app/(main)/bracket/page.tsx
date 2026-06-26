@@ -5,8 +5,17 @@ import { ROUNDS, type RoundKey } from "@/lib/rounds";
 import { getMatch, ROUND_SLOT_COUNT } from "@/lib/tournament";
 import type { Match } from "@/lib/types";
 
-// 좌 → 우 진행 순서. 32강 슬롯 0,1 승자 → 16강 슬롯 0 … 식으로 좁혀진다.
-const TREE: RoundKey[] = ["R32", "R16", "R8", "SF", "FINAL"];
+// 좌 → 우 컬럼. 32강 슬롯 0,1 승자 → 16강 슬롯 0 … 식으로 좁혀진다.
+// conn = 오른쪽 짝 커넥터 표시(다음 라운드로 합쳐지는 라운드만).
+// 3·4위전은 결승 바로 왼쪽에 별도 칸으로 둔다.
+const COLS: { round: RoundKey; conn: boolean }[] = [
+  { round: "R32", conn: true },
+  { round: "R16", conn: true },
+  { round: "R8", conn: true },
+  { round: "SF", conn: false },
+  { round: "THIRD", conn: false },
+  { round: "FINAL", conn: false },
+];
 
 export default function BracketPage() {
   const { state } = useAppState();
@@ -34,33 +43,20 @@ export default function BracketPage() {
 
       <div className="-mx-4 overflow-x-auto px-4 pb-2">
         <div className="bracket">
-          {TREE.map((round) => {
-            const conn = round !== "FINAL";
-            return (
-              <div key={round} className="bracket-col">
-                <div className="bracket-head font-display text-sm text-ink">
-                  {ROUNDS[round].label}
-                </div>
-                <div className={`bracket-cells${conn ? " bracket-cells-conn" : ""}`}>
-                  {Array.from({ length: ROUND_SLOT_COUNT[round] }, (_, slot) => (
-                    <div key={slot} className="bracket-cell">
-                      <BracketNode match={getMatch(state.matches, round, slot)} />
-                    </div>
-                  ))}
-                </div>
+          {COLS.map(({ round, conn }) => (
+            <div key={round} className="bracket-col">
+              <div className="bracket-head font-display text-sm text-ink">
+                {ROUNDS[round].label}
               </div>
-            );
-          })}
-
-          {/* 3·4위전 — 트리 밖 별도 칸 */}
-          <div className="bracket-col">
-            <div className="bracket-head font-display text-sm text-ink">3·4위</div>
-            <div className="bracket-cells">
-              <div className="bracket-cell">
-                <BracketNode match={getMatch(state.matches, "THIRD", 0)} />
+              <div className={`bracket-cells${conn ? " bracket-cells-conn" : ""}`}>
+                {Array.from({ length: ROUND_SLOT_COUNT[round] }, (_, slot) => (
+                  <div key={slot} className="bracket-cell">
+                    <BracketNode match={getMatch(state.matches, round, slot)} />
+                  </div>
+                ))}
               </div>
             </div>
-          </div>
+          ))}
         </div>
       </div>
     </div>

@@ -64,14 +64,14 @@ body {
 .bracket {
   display: inline-flex;
   align-items: stretch;
-  min-height: 52rem; /* 32강 16경기 세로 확보 */
+  min-height: 64rem; /* 32강 16경기 세로 여유 */
   padding: 0.25rem 0;
 }
 .bracket-col {
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
-  width: 9rem;
+  width: 10.5rem;
 }
 .bracket-head {
   height: 1.75rem;
@@ -89,7 +89,9 @@ body {
   display: flex;
   flex: 1 1 0;
   align-items: center;
-  padding-right: 1.1rem; /* 커넥터 공간 */
+  padding-right: 1.6rem; /* 컬럼 사이 가로 간격(커넥터 공간) */
+  padding-top: 0.4rem; /* 카드 사이 세로 간격 */
+  padding-bottom: 0.4rem;
 }
 /* 오른쪽 가로 커넥터 */
 .bracket-cells-conn .bracket-cell::after {
@@ -97,7 +99,7 @@ body {
   position: absolute;
   right: 0;
   top: 50%;
-  width: 1.1rem;
+  width: 1.6rem;
   height: 2px;
   background: var(--line);
 }
