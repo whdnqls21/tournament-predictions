@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "outDir": ".test-build",
+    "rootDir": ".",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": [
+    "scripts/test-tournament.ts",
+    "src/lib/tournament.ts",
+    "src/lib/rounds.ts",
+    "src/lib/types.ts"
+  ]
+}

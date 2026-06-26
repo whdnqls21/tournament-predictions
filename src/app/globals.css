@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-base: #0c241d;
+  --bg-base-2: #0e2a21;
+  --grass: #46e08a;
+  --gold: #f4c64e;
+  --line: rgba(255, 255, 255, 0.07);
+  --text: #eaf5ef;
+  --text-dim: #9db4a9;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  background-color: var(--bg-base);
+}
+
+body {
+  color: var(--text);
+  font-family: var(--font-body), sans-serif;
+  min-height: 100dvh;
+  /* 잔디 줄무늬 — 세로 밴드 (은은하게) */
+  background-color: var(--bg-base);
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.015) 0%, transparent 40%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.022) 0px,
+      rgba(255, 255, 255, 0.022) 46px,
+      rgba(0, 0, 0, 0.05) 46px,
+      rgba(0, 0, 0, 0.05) 92px
+    );
+  background-attachment: fixed;
+}
+
+/* 숫자/점수 강조 */
+.tabular {
+  font-family: var(--font-numeric), sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* 디스플레이 폰트 (제목·강 이름) */
+.font-display {
+  font-family: var(--font-display), sans-serif;
+}
+
+/* 스크롤바 — 모바일 우선이라 데스크탑에서만 은은하게 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+}
