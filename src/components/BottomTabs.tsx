@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-// 하단 탭 — 예측 · 대진표 · 순위 (모바일 우선, §6)
+// 하단 탭 — 예측 · 대진표 · 순위 · 미니게임 (모바일 우선, §6)
 const TABS = [
   { href: "/", label: "예측", icon: PredictIcon },
   { href: "/bracket", label: "대진표", icon: BracketIcon },
   { href: "/ranking", label: "순위", icon: RankIcon },
+  { href: "/minigame", label: "미니게임", icon: MiniIcon },
 ] as const;
 
 export default function BottomTabs() {
@@ -64,6 +65,16 @@ function RankIcon({ active }: IconProps) {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
       <path d="M6 21V11M12 21V4M18 21v-7" />
+    </svg>
+  );
+}
+
+function MiniIcon({ active }: IconProps) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
     </svg>
   );
 }

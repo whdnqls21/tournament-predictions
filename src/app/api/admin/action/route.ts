@@ -150,6 +150,7 @@ export async function POST(req: NextRequest) {
 
   // ── 대회 초기화: 모든 예측·경기 삭제 + 셋업 미완료 상태로 (경기별 재입력) ──
   if (action === "reset") {
+    await sb.from("mini_predictions").delete().neq("id", ZERO_UUID);
     const { error: delPredErr } = await sb.from("predictions").delete().neq("id", ZERO_UUID);
     if (delPredErr) {
       console.error("reset 예측 초기화 실패", delPredErr);
@@ -168,7 +169,17 @@ export async function POST(req: NextRequest) {
     }
     const { error: settingsErr } = await sb
       .from("settings")
-      .upsert({ id: 1, setup_done: false, current_open_round: null }, { onConflict: "id" });
+      .upsert(
+        {
+          id: 1,
+          setup_done: false,
+          current_open_round: null,
+          mini_match_id: null,
+          mini_home_score: null,
+          mini_away_score: null,
+        },
+        { onConflict: "id" }
+      );
     if (settingsErr) {
       console.error("reset 설정 저장 실패", settingsErr);
       return NextResponse.json(
@@ -237,6 +248,92 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error("lock 실패", error);
       return NextResponse.json({ error: "마감에 실패했습니다." }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // ── 미니게임: 대상 경기 지정/해제 ──────────────────────────────────
+  if (action === "miniSet") {
+    const matchId = body?.matchId;
+    if (matchId === null) {
+      // 해제
+      const { error } = await sb
+        .from("settings")
+        .update({ mini_match_id: null, mini_home_score: null, mini_away_score: null })
+        .eq("id", 1);
+      if (error) {
+        console.error("miniSet 해제 실패", error);
+        return NextResponse.json({ error: "미니게임 해제에 실패했습니다." }, { status: 500 });
+      }
+      return NextResponse.json({ ok: true });
+    }
+    if (typeof matchId !== "string") {
+      return NextResponse.json({ error: "경기를 확인하세요." }, { status: 400 });
+    }
+    const { data: matchData } = await sb
+      .from("matches")
+      .select("team_a,team_b")
+      .eq("id", matchId)
+      .maybeSingle();
+    const match = matchData as Pick<Match, "team_a" | "team_b"> | null;
+    if (!match || !match.team_a || !match.team_b) {
+      return NextResponse.json(
+        { error: "두 팀이 정해진 경기만 미니게임으로 지정할 수 있습니다." },
+        { status: 400 }
+      );
+    }
+    // 대상 변경 시 실제 스코어는 초기화
+    const { error } = await sb
+      .from("settings")
+      .update({ mini_match_id: matchId, mini_home_score: null, mini_away_score: null })
+      .eq("id", 1);
+    if (error) {
+      console.error("miniSet 실패", error);
+      return NextResponse.json({ error: "미니게임 지정에 실패했습니다." }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // ── 미니게임: 실제 스코어 입력 (경기 마감 후) ──────────────────────
+  if (action === "miniResult") {
+    const home = body?.homeScore;
+    const away = body?.awayScore;
+    const validScore = (v: unknown): v is number =>
+      typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 50;
+    if (!validScore(home) || !validScore(away)) {
+      return NextResponse.json({ error: "스코어를 확인하세요 (0~50)." }, { status: 400 });
+    }
+    const { data: settingsData } = await sb
+      .from("settings")
+      .select("mini_match_id")
+      .eq("id", 1)
+      .maybeSingle();
+    const matchId = (settingsData as { mini_match_id: string | null } | null)?.mini_match_id ?? null;
+    if (!matchId) {
+      return NextResponse.json({ error: "지정된 미니게임이 없습니다." }, { status: 400 });
+    }
+    const { data: matchData } = await sb
+      .from("matches")
+      .select("*")
+      .eq("id", matchId)
+      .maybeSingle();
+    const match = matchData as Match | null;
+    if (!match) {
+      return NextResponse.json({ error: "미니게임 경기를 찾을 수 없습니다." }, { status: 404 });
+    }
+    if (!matchClosed(match, Date.now())) {
+      return NextResponse.json(
+        { error: "경기 시작(마감) 후에 실제 스코어를 입력하세요." },
+        { status: 400 }
+      );
+    }
+    const { error } = await sb
+      .from("settings")
+      .update({ mini_home_score: home, mini_away_score: away })
+      .eq("id", 1);
+    if (error) {
+      console.error("miniResult 실패", error);
+      return NextResponse.json({ error: "스코어 저장에 실패했습니다." }, { status: 500 });
     }
     return NextResponse.json({ ok: true });
   }

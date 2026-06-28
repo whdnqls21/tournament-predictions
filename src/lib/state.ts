@@ -13,22 +13,85 @@ import {
   type GiftEdge,
   type Standing,
 } from "./tournament";
-import type { Match, Participant, Prediction, Settings } from "./types";
+import type { Match, MiniPrediction, Participant, Prediction, Settings } from "./types";
+
+// ── 미니게임(스코어 맞히기) 뷰 ──────────────────────────────────────────
+export interface MiniGameView {
+  matchId: string;
+  teamA: string;
+  teamB: string;
+  startsAt: string | null;
+  closed: boolean;
+  myGuess: { a: number; b: number } | null;
+  savedBy: string[]; // 추측 저장한 참가자 id (마감 전 현황)
+  guesses: { participantId: string; name: string; a: number; b: number }[]; // 마감 후(또는 관리자) 공개
+  actual: { a: number; b: number } | null; // 관리자가 입력한 실제 스코어
+  winners: string[]; // 정확히 맞힌 참가자 id (실제 스코어 입력 후)
+}
+
+function buildMiniGame(
+  settings: Settings | null,
+  matches: Match[],
+  miniPreds: MiniPrediction[],
+  nameById: Map<string, string>,
+  now: number,
+  opts: { forAdmin: boolean; sessionId?: string | null }
+): MiniGameView | null {
+  const matchId = settings?.mini_match_id ?? null;
+  if (!matchId) return null;
+  const m = matches.find((x) => x.id === matchId);
+  if (!m || !m.team_a || !m.team_b) return null; // 대상 경기가 없거나 팀 미정이면 비활성
+
+  const closed = matchClosed(m, now);
+  const preds = miniPreds.filter((p) => p.match_id === matchId);
+  const actual =
+    settings?.mini_home_score != null && settings?.mini_away_score != null
+      ? { a: settings.mini_home_score, b: settings.mini_away_score }
+      : null;
+
+  const reveal = opts.forAdmin || closed;
+  const guesses = reveal
+    ? preds.map((p) => ({
+        participantId: p.participant_id,
+        name: nameById.get(p.participant_id) ?? "",
+        a: p.a_score,
+        b: p.b_score,
+      }))
+    : [];
+  const mine = opts.sessionId ? preds.find((p) => p.participant_id === opts.sessionId) : undefined;
+
+  return {
+    matchId,
+    teamA: m.team_a,
+    teamB: m.team_b,
+    startsAt: m.starts_at,
+    closed,
+    myGuess: mine ? { a: mine.a_score, b: mine.b_score } : null,
+    savedBy: preds.map((p) => p.participant_id),
+    guesses,
+    actual,
+    winners: actual
+      ? preds.filter((p) => p.a_score === actual.a && p.b_score === actual.b).map((p) => p.participant_id)
+      : [],
+  };
+}
 
 interface RawData {
   participants: Participant[];
   settings: Settings | null;
   matches: Match[];
   predictions: Prediction[];
+  miniPreds: MiniPrediction[];
 }
 
 async function fetchAll(): Promise<RawData> {
   const sb = createServiceClient();
-  const [pRes, sRes, mRes, prRes] = await Promise.all([
+  const [pRes, sRes, mRes, prRes, mpRes] = await Promise.all([
     sb.from("participants").select("id,name,display_order,created_at").order("display_order"),
     sb.from("settings").select("*").eq("id", 1).maybeSingle(),
     sb.from("matches").select("*"),
     sb.from("predictions").select("*"),
+    sb.from("mini_predictions").select("*"),
   ]);
   return {
     participants: (pRes.data ?? []) as Participant[],
@@ -39,6 +102,7 @@ async function fetchAll(): Promise<RawData> {
         a.bracket_slot - b.bracket_slot
     ),
     predictions: (prRes.data ?? []) as Prediction[],
+    miniPreds: (mpRes.data ?? []) as MiniPrediction[],
   };
 }
 
@@ -84,6 +148,8 @@ export interface ParticipantState {
   serverNow: number;
   standings: Standing[];
   gifts: GiftEdge[];
+  // 미니게임(스코어 맞히기) — 없으면 null
+  miniGame: MiniGameView | null;
 }
 
 export async function buildParticipantState(): Promise<ParticipantState> {
@@ -92,7 +158,7 @@ export async function buildParticipantState(): Promise<ParticipantState> {
     isAdmin(),
     fetchAll(),
   ]);
-  const { participants, settings, matches, predictions } = data;
+  const { participants, settings, matches, predictions, miniPreds } = data;
   const nameById = new Map(participants.map((p) => [p.id, p.name]));
 
   const myPredictions: ParticipantState["myPredictions"] = {};
@@ -149,6 +215,10 @@ export async function buildParticipantState(): Promise<ParticipantState> {
     serverNow: now,
     standings,
     gifts,
+    miniGame: buildMiniGame(settings, matches, miniPreds, nameById, now, {
+      forAdmin: false,
+      sessionId: session?.id ?? null,
+    }),
   };
 }
 
@@ -164,15 +234,18 @@ export interface AdminState {
   // 경기별로 "저장(픽)한" 참가자 id 목록.
   savedByMatch: Record<string, string[]>;
   standings: Standing[];
+  // 미니게임 — 없으면 null (관리자는 마감 전에도 추측 내용 공개)
+  miniGame: MiniGameView | null;
 }
 
 export async function buildAdminState(): Promise<AdminState> {
   const sb = createServiceClient();
-  const [pRes, sRes, mRes, prRes] = await Promise.all([
+  const [pRes, sRes, mRes, prRes, mpRes] = await Promise.all([
     sb.from("participants").select("id,name,display_order,pin_hash").order("display_order"),
     sb.from("settings").select("*").eq("id", 1).maybeSingle(),
     sb.from("matches").select("*"),
     sb.from("predictions").select("*"),
+    sb.from("mini_predictions").select("*"),
   ]);
 
   const participants = (pRes.data ?? []) as (Participant & { pin_hash: string | null })[];
@@ -183,6 +256,8 @@ export async function buildAdminState(): Promise<AdminState> {
       a.bracket_slot - b.bracket_slot
   );
   const predictions = (prRes.data ?? []) as Prediction[];
+  const miniPreds = (mpRes.data ?? []) as MiniPrediction[];
+  const nameById = new Map(participants.map((p) => [p.id, p.name]));
 
   const savedByMatch: Record<string, string[]> = {};
   for (const m of matches) {
@@ -207,5 +282,8 @@ export async function buildAdminState(): Promise<AdminState> {
     confirmByRound: confirmByRound(participants, matches, predictions),
     savedByMatch,
     standings: computeStandings(participants, matches, predictions),
+    miniGame: buildMiniGame(settings, matches, miniPreds, nameById, Date.now(), {
+      forAdmin: true,
+    }),
   };
 }

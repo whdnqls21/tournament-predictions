@@ -7,7 +7,7 @@ import { Card } from "@/components/Card";
 import { postJSON } from "@/lib/client-api";
 import { ROUNDS, type RoundKey } from "@/lib/rounds";
 import type { AdminState } from "@/lib/state";
-import { isoToLocalInput, localInputToIso } from "@/lib/time";
+import { formatKickoff, isoToLocalInput, localInputToIso } from "@/lib/time";
 import { matchClosed, matchesInRound } from "@/lib/tournament";
 import type { Match } from "@/lib/types";
 
@@ -161,6 +161,7 @@ function Dashboard({ admin, reload }: { admin: AdminState; reload: () => void })
       <PinManager admin={admin} run={run} busy={busy} />
       <Setup32 admin={admin} run={run} busy={busy} />
       <RoundControl admin={admin} run={run} busy={busy} />
+      <MiniGameAdmin admin={admin} run={run} busy={busy} />
       <UndoCard admin={admin} run={run} busy={busy} />
 
       <Card className="flex flex-col gap-2">
@@ -615,5 +616,140 @@ function SetupMatchRow({
           </div>
         ))}
     </div>
+  );
+}
+
+function MiniGameAdmin({
+  admin,
+  run,
+  busy,
+}: {
+  admin: AdminState;
+  run: (fn: () => Promise<unknown>) => Promise<void>;
+  busy: boolean;
+}) {
+  const mini = admin.miniGame;
+  const candidates = admin.matches.filter((m) => m.team_a && m.team_b);
+  const [sel, setSel] = useState("");
+  const [home, setHome] = useState(mini?.actual?.a ?? 0);
+  const [away, setAway] = useState(mini?.actual?.b ?? 0);
+
+  const clamp = (v: string) => Math.max(0, Math.min(50, Math.floor(Number(v) || 0)));
+
+  return (
+    <Card className="flex flex-col gap-3">
+      <div>
+        <h2 className="font-display text-lg text-ink">🎯 미니게임 (스코어 맞히기)</h2>
+        <p className="mt-1 text-xs text-ink-faint">
+          브라켓 경기 중 하나를 골라 스코어 맞히기 대상으로 지정합니다. 메인 게임 순위와는 별개예요.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <select
+          value={sel}
+          onChange={(e) => setSel(e.target.value)}
+          className="w-full rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-sm text-ink outline-none focus:border-grass"
+        >
+          <option value="">경기 선택…</option>
+          {candidates.map((m) => (
+            <option key={m.id} value={m.id}>
+              {ROUNDS[m.round].label} · {m.team_a} vs {m.team_b}
+            </option>
+          ))}
+        </select>
+        <button
+          disabled={busy || !sel}
+          onClick={() =>
+            run(async () => {
+              await postJSON("/api/admin/action", { action: "miniSet", matchId: sel });
+              setSel("");
+            })
+          }
+          className="shrink-0 rounded-lg bg-grass/90 px-3 py-1.5 text-xs text-pitch-base disabled:opacity-40"
+        >
+          지정
+        </button>
+      </div>
+
+      {!mini ? (
+        <p className="text-sm text-ink-dim">지정된 미니게임이 없습니다.</p>
+      ) : (
+        <div className="flex flex-col gap-3 rounded-xl border border-pitch-line bg-black/10 p-3">
+          <div className="flex items-center justify-between">
+            <span className="font-display text-ink">
+              {mini.teamA} vs {mini.teamB}
+            </span>
+            <span className="text-xs text-ink-faint">{mini.closed ? "🔒 마감" : "진행 중"}</span>
+          </div>
+          <span className="text-[11px] text-ink-faint">⏰ {formatKickoff(mini.startsAt)}</span>
+
+          {/* 추측 현황 (관리자는 항상 공개) */}
+          <div className="flex flex-col gap-1">
+            {admin.participants.map((p) => {
+              const g = mini.guesses.find((x) => x.participantId === p.id);
+              const hit = mini.winners.includes(p.id);
+              return (
+                <div key={p.id} className="flex items-center justify-between text-xs">
+                  <span className="text-ink">{p.name}</span>
+                  <span className={`tabular ${hit ? "text-grass" : "text-ink-dim"}`}>
+                    {g ? `${g.a} : ${g.b}${hit ? " 🎯" : ""}` : "—"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* 실제 스코어 입력 (마감 후) */}
+          {mini.closed && (
+            <div className="flex items-center gap-2 border-t border-pitch-line pt-3">
+              <span className="text-xs text-ink-dim">실제</span>
+              <input
+                type="number"
+                min={0}
+                max={50}
+                value={home}
+                onChange={(e) => setHome(clamp(e.target.value))}
+                className="tabular w-14 rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-center text-ink outline-none focus:border-grass"
+              />
+              <span className="text-ink-faint">:</span>
+              <input
+                type="number"
+                min={0}
+                max={50}
+                value={away}
+                onChange={(e) => setAway(clamp(e.target.value))}
+                className="tabular w-14 rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-center text-ink outline-none focus:border-grass"
+              />
+              <button
+                disabled={busy}
+                onClick={() =>
+                  run(() =>
+                    postJSON("/api/admin/action", {
+                      action: "miniResult",
+                      homeScore: home,
+                      awayScore: away,
+                    })
+                  )
+                }
+                className="ml-auto shrink-0 rounded-lg bg-grass/90 px-3 py-1.5 text-xs text-pitch-base disabled:opacity-40"
+              >
+                스코어 저장
+              </button>
+            </div>
+          )}
+
+          <button
+            disabled={busy}
+            onClick={() =>
+              run(() => postJSON("/api/admin/action", { action: "miniSet", matchId: null }))
+            }
+            className="text-left text-xs text-danger disabled:opacity-40"
+          >
+            미니게임 해제
+          </button>
+        </div>
+      )}
+    </Card>
   );
 }

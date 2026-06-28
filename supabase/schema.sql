@@ -32,6 +32,7 @@ $$;
 -- ════════════════════════════════════════════════════════════════════════
 -- 1) participants — 참가자 4명 (윤·준·경·빈)
 -- ════════════════════════════════════════════════════════════════════════
+drop table if exists public.mini_predictions cascade;
 drop table if exists public.predictions cascade;
 drop table if exists public.matches cascade;
 drop table if exists public.settings cascade;
@@ -53,6 +54,9 @@ create table public.settings (
   admin_pin_hash     text,                        -- 관리자 PIN 해시 (셋업 전 null)
   current_open_round text,                         -- 현재 예측 오픈 라운드 (R32/R16/R8/SF/FINAL/THIRD), 없으면 null
   setup_done         boolean not null default false,
+  mini_match_id      uuid,                            -- 미니게임(스코어 맞히기) 대상 경기. matches FK 는 아래에서 추가.
+  mini_home_score    int,                             -- 미니게임 실제 스코어(team_a)
+  mini_away_score    int,                             -- 미니게임 실제 스코어(team_b)
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now(),
   constraint settings_singleton check (id = 1),
@@ -115,13 +119,40 @@ create trigger predictions_set_updated_at
   before update on public.predictions
   for each row execute function public.set_updated_at();
 
+-- settings.mini_match_id → matches FK (matches 가 만들어진 뒤 추가)
+alter table public.settings
+  add constraint settings_mini_match_fk
+  foreign key (mini_match_id) references public.matches(id) on delete set null;
+
+-- ════════════════════════════════════════════════════════════════════════
+-- 5) mini_predictions — 미니게임 스코어 맞히기 (메인 게임과 별개)
+-- ════════════════════════════════════════════════════════════════════════
+create table public.mini_predictions (
+  id             uuid primary key default gen_random_uuid(),
+  participant_id uuid not null references public.participants(id) on delete cascade,
+  match_id       uuid not null references public.matches(id) on delete cascade,
+  a_score        int not null,                    -- team_a(홈) 예측 득점
+  b_score        int not null,                    -- team_b(원정) 예측 득점
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  constraint mini_predictions_unique unique (participant_id, match_id),
+  constraint mini_scores_range check (a_score between 0 and 50 and b_score between 0 and 50)
+);
+
+create index mini_predictions_match_idx on public.mini_predictions (match_id);
+
+create trigger mini_predictions_set_updated_at
+  before update on public.mini_predictions
+  for each row execute function public.set_updated_at();
+
 -- ════════════════════════════════════════════════════════════════════════
 -- RLS — 모든 테이블 잠그고, 안전한 읽기만 뷰로 노출
 -- ════════════════════════════════════════════════════════════════════════
-alter table public.participants enable row level security;
-alter table public.settings     enable row level security;
-alter table public.matches      enable row level security;
-alter table public.predictions  enable row level security;
+alter table public.participants    enable row level security;
+alter table public.settings        enable row level security;
+alter table public.matches         enable row level security;
+alter table public.predictions     enable row level security;
+alter table public.mini_predictions enable row level security;
 
 -- matches: 공개 읽기 허용 (팀/결과는 공개 정보). 쓰기는 정책 없음 → 서버(service_role)만 가능.
 drop policy if exists matches_public_read on public.matches;
