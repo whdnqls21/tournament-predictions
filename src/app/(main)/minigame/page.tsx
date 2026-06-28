@@ -86,27 +86,26 @@ function MiniCard({
 }) {
   const closed =
     mini.closed || (!!mini.startsAt && now >= new Date(mini.startsAt).getTime());
+  const submitted = mini.myGuess !== null;
   const [a, setA] = useState(mini.myGuess?.a ?? 0);
   const [b, setB] = useState(mini.myGuess?.b ?? 0);
 
+  const editable = !closed && !submitted;
   const countdown = formatCountdown(mini.startsAt, now);
   const nameById = new Map(participants.map((p) => [p.id, p.name]));
 
-  const save = (na: number, nb: number) =>
-    run(() => postJSON("/api/minigame", { a: na, b: nb }));
-
   const step = (side: "a" | "b", delta: number) => {
-    if (closed) return;
-    if (side === "a") {
-      const na = Math.max(0, Math.min(50, a + delta));
-      setA(na);
-      save(na, b);
-    } else {
-      const nb = Math.max(0, Math.min(50, b + delta));
-      setB(nb);
-      save(a, nb);
-    }
+    if (!editable) return;
+    if (side === "a") setA((v) => Math.max(0, Math.min(50, v + delta)));
+    else setB((v) => Math.max(0, Math.min(50, v + delta)));
   };
+
+  const submit = () => run(() => postJSON("/api/minigame", { action: "submit", a, b }));
+  const withdraw = () => run(() => postJSON("/api/minigame", { action: "withdraw" }));
+
+  // 제출됨이면 서버에 저장된 값, 편집 중이면 로컬 값 표시
+  const showA = !closed && submitted ? mini.myGuess!.a : a;
+  const showB = !closed && submitted ? mini.myGuess!.b : b;
 
   return (
     <Card className="flex flex-col gap-4">
@@ -121,20 +120,44 @@ function MiniCard({
         )}
       </div>
 
-      {/* 스코어 입력 (탭 즉시 저장, 시작 전까지 수정) */}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-        <ScoreColumn team={mini.teamA} value={a} closed={closed} busy={busy} onStep={(d) => step("a", d)} />
-        <span className="text-center font-display text-2xl text-ink-faint">:</span>
-        <ScoreColumn team={mini.teamB} value={b} closed={closed} busy={busy} onStep={(d) => step("b", d)} />
-      </div>
-
       {!closed && (
-        <p className="text-center text-[11px] text-ink-faint">
-          +/− 를 누르면 바로 저장돼요. 경기 시작 전까지 수정 가능.
-        </p>
+        <>
+          {/* 스코어 입력 — +/− 로 맞춘 뒤 제출해야 저장 */}
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+            <ScoreColumn team={mini.teamA} value={showA} editable={editable} busy={busy} onStep={(d) => step("a", d)} />
+            <span className="text-center font-display text-2xl text-ink-faint">:</span>
+            <ScoreColumn team={mini.teamB} value={showB} editable={editable} busy={busy} onStep={(d) => step("b", d)} />
+          </div>
+
+          {submitted ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-center text-sm text-grass">✓ 제출 완료</p>
+              <button
+                onClick={withdraw}
+                disabled={busy}
+                className="rounded-xl border border-pitch-line py-2.5 text-sm text-ink-dim disabled:opacity-40"
+              >
+                제출 회수 (수정하려면)
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={submit}
+                disabled={busy}
+                className="rounded-xl bg-grass py-2.5 font-display text-base text-pitch-base disabled:opacity-40"
+              >
+                제출
+              </button>
+              <p className="text-center text-[11px] text-ink-faint">
+                +/− 로 스코어를 맞춘 뒤 <b>제출</b>하세요. 시작 전까지 회수·수정 가능.
+              </p>
+            </div>
+          )}
+        </>
       )}
 
-      {/* 마감 전: 누가 저장했는지 / 마감 후: 모두의 추측 + 실제 스코어 */}
+      {/* 마감 전: 누가 제출했는지 / 마감 후: 모두의 추측 + 실제 스코어 */}
       {!closed ? (
         <div className="flex flex-wrap justify-center gap-1.5">
           {participants.map((p) => {
@@ -201,13 +224,13 @@ function MiniCard({
 function ScoreColumn({
   team,
   value,
-  closed,
+  editable,
   busy,
   onStep,
 }: {
   team: string;
   value: number;
-  closed: boolean;
+  editable: boolean;
   busy: boolean;
   onStep: (delta: number) => void;
 }) {
@@ -217,7 +240,7 @@ function ScoreColumn({
       <div className="tabular flex items-center justify-center font-display text-4xl text-ink">
         {value}
       </div>
-      {!closed && (
+      {editable && (
         <div className="flex items-center gap-2">
           <button
             disabled={busy || value <= 0}
