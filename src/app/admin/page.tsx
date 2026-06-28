@@ -707,17 +707,24 @@ function MiniAdminRow({
       </div>
       <span className="text-[11px] text-ink-faint">⏰ {formatKickoff(game.startsAt)}</span>
 
-      {/* 추측 현황 (관리자는 항상 공개) */}
+      {/* 추측 현황 — 마감 전엔 제출 여부만, 마감 후 스코어 공개(메인 예측과 동일) */}
       <div className="flex flex-col gap-1">
         {admin.participants.map((p) => {
           const g = game.guesses.find((x) => x.participantId === p.id);
+          const submitted = game.savedBy.includes(p.id);
           const hit = game.winners.includes(p.id);
           return (
             <div key={p.id} className="flex items-center justify-between text-xs">
               <span className="text-ink">{p.name}</span>
-              <span className={`tabular ${hit ? "text-grass" : "text-ink-dim"}`}>
-                {g ? `${g.a} : ${g.b}${hit ? " 🎯" : ""}` : "—"}
-              </span>
+              {game.closed ? (
+                <span className={`tabular ${hit ? "text-grass" : "text-ink-dim"}`}>
+                  {g ? `${g.a} : ${g.b}${hit ? " 🎯" : ""}` : "—"}
+                </span>
+              ) : (
+                <span className={submitted ? "text-grass" : "text-ink-faint"}>
+                  {submitted ? "제출✓" : "…"}
+                </span>
+              )}
             </div>
           );
         })}

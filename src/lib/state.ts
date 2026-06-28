@@ -36,7 +36,7 @@ function buildMiniGames(
   miniPreds: MiniPrediction[],
   nameById: Map<string, string>,
   now: number,
-  opts: { forAdmin: boolean; sessionId?: string | null }
+  opts: { sessionId?: string | null }
 ): MiniGameView[] {
   const out: MiniGameView[] = [];
   for (const mg of miniGames) {
@@ -50,8 +50,8 @@ function buildMiniGames(
         ? { a: mg.home_score, b: mg.away_score }
         : null;
 
-    const reveal = opts.forAdmin || closed;
-    const guesses = reveal
+    // 메인 예측과 동일: 마감(시작 시간 경과/강제 마감) 후에만 추측 내용 공개.
+    const guesses = closed
       ? preds.map((p) => ({
           participantId: p.participant_id,
           name: nameById.get(p.participant_id) ?? "",
@@ -230,7 +230,6 @@ export async function buildParticipantState(): Promise<ParticipantState> {
     standings,
     gifts,
     miniGames: buildMiniGames(miniGames, matches, miniPreds, nameById, now, {
-      forAdmin: false,
       sessionId: session?.id ?? null,
     }),
   };
@@ -248,7 +247,7 @@ export interface AdminState {
   // 경기별로 "저장(픽)한" 참가자 id 목록.
   savedByMatch: Record<string, string[]>;
   standings: Standing[];
-  // 미니게임 — 활성 게임들 (관리자는 마감 전에도 추측 내용 공개)
+  // 미니게임 — 활성 게임들 (메인 예측과 동일하게 마감 후에만 추측 내용 공개)
   miniGames: MiniGameView[];
 }
 
@@ -298,8 +297,6 @@ export async function buildAdminState(): Promise<AdminState> {
     confirmByRound: confirmByRound(participants, matches, predictions),
     savedByMatch,
     standings: computeStandings(participants, matches, predictions),
-    miniGames: buildMiniGames(miniGames, matches, miniPreds, nameById, Date.now(), {
-      forAdmin: true,
-    }),
+    miniGames: buildMiniGames(miniGames, matches, miniPreds, nameById, Date.now(), {}),
   };
 }
