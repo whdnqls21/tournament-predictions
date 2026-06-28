@@ -628,20 +628,19 @@ function MiniGameAdmin({
   run: (fn: () => Promise<unknown>) => Promise<void>;
   busy: boolean;
 }) {
-  const mini = admin.miniGame;
-  const candidates = admin.matches.filter((m) => m.team_a && m.team_b);
+  const active = admin.miniGames;
+  const activeIds = new Set(active.map((g) => g.matchId));
+  const candidates = admin.matches.filter(
+    (m) => m.team_a && m.team_b && !activeIds.has(m.id)
+  );
   const [sel, setSel] = useState("");
-  const [home, setHome] = useState(mini?.actual?.a ?? 0);
-  const [away, setAway] = useState(mini?.actual?.b ?? 0);
-
-  const clamp = (v: string) => Math.max(0, Math.min(50, Math.floor(Number(v) || 0)));
 
   return (
     <Card className="flex flex-col gap-3">
       <div>
         <h2 className="font-display text-lg text-ink">🎯 미니게임 (스코어 맞히기)</h2>
         <p className="mt-1 text-xs text-ink-faint">
-          브라켓 경기 중 하나를 골라 스코어 맞히기 대상으로 지정합니다. 메인 게임 순위와는 별개예요.
+          브라켓 경기를 골라 스코어 맞히기로 추가합니다(여러 개 가능). 메인 게임 순위와는 별개예요.
         </p>
       </div>
 
@@ -662,94 +661,119 @@ function MiniGameAdmin({
           disabled={busy || !sel}
           onClick={() =>
             run(async () => {
-              await postJSON("/api/admin/action", { action: "miniSet", matchId: sel });
+              await postJSON("/api/admin/action", { action: "miniAdd", matchId: sel });
               setSel("");
             })
           }
           className="shrink-0 rounded-lg bg-grass/90 px-3 py-1.5 text-xs text-pitch-base disabled:opacity-40"
         >
-          지정
+          추가
         </button>
       </div>
 
-      {!mini ? (
-        <p className="text-sm text-ink-dim">지정된 미니게임이 없습니다.</p>
+      {active.length === 0 ? (
+        <p className="text-sm text-ink-dim">활성 미니게임이 없습니다.</p>
       ) : (
-        <div className="flex flex-col gap-3 rounded-xl border border-pitch-line bg-black/10 p-3">
-          <div className="flex items-center justify-between">
-            <span className="font-display text-ink">
-              {mini.teamA} vs {mini.teamB}
-            </span>
-            <span className="text-xs text-ink-faint">{mini.closed ? "🔒 마감" : "진행 중"}</span>
-          </div>
-          <span className="text-[11px] text-ink-faint">⏰ {formatKickoff(mini.startsAt)}</span>
+        active.map((g) => (
+          <MiniAdminRow key={g.matchId} game={g} admin={admin} run={run} busy={busy} />
+        ))
+      )}
+    </Card>
+  );
+}
 
-          {/* 추측 현황 (관리자는 항상 공개) */}
-          <div className="flex flex-col gap-1">
-            {admin.participants.map((p) => {
-              const g = mini.guesses.find((x) => x.participantId === p.id);
-              const hit = mini.winners.includes(p.id);
-              return (
-                <div key={p.id} className="flex items-center justify-between text-xs">
-                  <span className="text-ink">{p.name}</span>
-                  <span className={`tabular ${hit ? "text-grass" : "text-ink-dim"}`}>
-                    {g ? `${g.a} : ${g.b}${hit ? " 🎯" : ""}` : "—"}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+function MiniAdminRow({
+  game,
+  admin,
+  run,
+  busy,
+}: {
+  game: AdminState["miniGames"][number];
+  admin: AdminState;
+  run: (fn: () => Promise<unknown>) => Promise<void>;
+  busy: boolean;
+}) {
+  const [home, setHome] = useState(game.actual?.a ?? 0);
+  const [away, setAway] = useState(game.actual?.b ?? 0);
+  const clamp = (v: string) => Math.max(0, Math.min(50, Math.floor(Number(v) || 0)));
 
-          {/* 실제 스코어 입력 (마감 후) */}
-          {mini.closed && (
-            <div className="flex items-center gap-2 border-t border-pitch-line pt-3">
-              <span className="text-xs text-ink-dim">실제</span>
-              <input
-                type="number"
-                min={0}
-                max={50}
-                value={home}
-                onChange={(e) => setHome(clamp(e.target.value))}
-                className="tabular w-14 rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-center text-ink outline-none focus:border-grass"
-              />
-              <span className="text-ink-faint">:</span>
-              <input
-                type="number"
-                min={0}
-                max={50}
-                value={away}
-                onChange={(e) => setAway(clamp(e.target.value))}
-                className="tabular w-14 rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-center text-ink outline-none focus:border-grass"
-              />
-              <button
-                disabled={busy}
-                onClick={() =>
-                  run(() =>
-                    postJSON("/api/admin/action", {
-                      action: "miniResult",
-                      homeScore: home,
-                      awayScore: away,
-                    })
-                  )
-                }
-                className="ml-auto shrink-0 rounded-lg bg-grass/90 px-3 py-1.5 text-xs text-pitch-base disabled:opacity-40"
-              >
-                스코어 저장
-              </button>
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-pitch-line bg-black/10 p-3">
+      <div className="flex items-center justify-between">
+        <span className="truncate font-display text-ink">
+          {game.teamA} vs {game.teamB}
+        </span>
+        <span className="shrink-0 text-xs text-ink-faint">{game.closed ? "🔒 마감" : "진행 중"}</span>
+      </div>
+      <span className="text-[11px] text-ink-faint">⏰ {formatKickoff(game.startsAt)}</span>
+
+      {/* 추측 현황 (관리자는 항상 공개) */}
+      <div className="flex flex-col gap-1">
+        {admin.participants.map((p) => {
+          const g = game.guesses.find((x) => x.participantId === p.id);
+          const hit = game.winners.includes(p.id);
+          return (
+            <div key={p.id} className="flex items-center justify-between text-xs">
+              <span className="text-ink">{p.name}</span>
+              <span className={`tabular ${hit ? "text-grass" : "text-ink-dim"}`}>
+                {g ? `${g.a} : ${g.b}${hit ? " 🎯" : ""}` : "—"}
+              </span>
             </div>
-          )}
+          );
+        })}
+      </div>
 
+      {/* 실제 스코어 입력 (마감 후) */}
+      {game.closed && (
+        <div className="flex items-center gap-2 border-t border-pitch-line pt-3">
+          <span className="text-xs text-ink-dim">실제</span>
+          <input
+            type="number"
+            min={0}
+            max={50}
+            value={home}
+            onChange={(e) => setHome(clamp(e.target.value))}
+            className="tabular w-14 rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-center text-ink outline-none focus:border-grass"
+          />
+          <span className="text-ink-faint">:</span>
+          <input
+            type="number"
+            min={0}
+            max={50}
+            value={away}
+            onChange={(e) => setAway(clamp(e.target.value))}
+            className="tabular w-14 rounded-lg border border-pitch-line bg-black/20 px-2 py-1.5 text-center text-ink outline-none focus:border-grass"
+          />
           <button
             disabled={busy}
             onClick={() =>
-              run(() => postJSON("/api/admin/action", { action: "miniSet", matchId: null }))
+              run(() =>
+                postJSON("/api/admin/action", {
+                  action: "miniResult",
+                  matchId: game.matchId,
+                  homeScore: home,
+                  awayScore: away,
+                })
+              )
             }
-            className="text-left text-xs text-danger disabled:opacity-40"
+            className="ml-auto shrink-0 rounded-lg bg-grass/90 px-3 py-1.5 text-xs text-pitch-base disabled:opacity-40"
           >
-            미니게임 해제
+            스코어 저장
           </button>
         </div>
       )}
-    </Card>
+
+      <button
+        disabled={busy}
+        onClick={() => {
+          if (confirm("이 미니게임을 제거할까요? 참가자 추측도 삭제됩니다.")) {
+            run(() => postJSON("/api/admin/action", { action: "miniRemove", matchId: game.matchId }));
+          }
+        }}
+        className="text-left text-xs text-danger disabled:opacity-40"
+      >
+        제거
+      </button>
+    </div>
   );
 }

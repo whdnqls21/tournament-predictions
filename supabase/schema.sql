@@ -32,6 +32,7 @@ $$;
 -- ════════════════════════════════════════════════════════════════════════
 -- 1) participants — 참가자 4명 (윤·준·경·빈)
 -- ════════════════════════════════════════════════════════════════════════
+drop table if exists public.mini_games cascade;
 drop table if exists public.mini_predictions cascade;
 drop table if exists public.predictions cascade;
 drop table if exists public.matches cascade;
@@ -146,6 +147,20 @@ create trigger mini_predictions_set_updated_at
   for each row execute function public.set_updated_at();
 
 -- ════════════════════════════════════════════════════════════════════════
+-- 6) mini_games — 활성 미니게임(경기별 1행). 여러 개 동시 운영 가능.
+-- ════════════════════════════════════════════════════════════════════════
+create table public.mini_games (
+  match_id   uuid primary key references public.matches(id) on delete cascade,
+  home_score int,                         -- 실제 스코어 team_a (미입력 null)
+  away_score int,                         -- 실제 스코어 team_b (미입력 null)
+  created_at timestamptz not null default now(),
+  constraint mini_game_scores_range check (
+    (home_score is null and away_score is null)
+    or (home_score between 0 and 50 and away_score between 0 and 50)
+  )
+);
+
+-- ════════════════════════════════════════════════════════════════════════
 -- RLS — 모든 테이블 잠그고, 안전한 읽기만 뷰로 노출
 -- ════════════════════════════════════════════════════════════════════════
 alter table public.participants    enable row level security;
@@ -153,6 +168,7 @@ alter table public.settings        enable row level security;
 alter table public.matches         enable row level security;
 alter table public.predictions     enable row level security;
 alter table public.mini_predictions enable row level security;
+alter table public.mini_games       enable row level security;
 
 -- matches: 공개 읽기 허용 (팀/결과는 공개 정보). 쓰기는 정책 없음 → 서버(service_role)만 가능.
 drop policy if exists matches_public_read on public.matches;

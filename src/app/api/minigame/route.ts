@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getParticipantSession } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { matchClosed } from "@/lib/tournament";
-import type { Match, Settings } from "@/lib/types";
+import type { Match } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -20,17 +20,20 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const action = body?.action;
+  const matchId = body?.matchId;
+  if (typeof matchId !== "string") {
+    return NextResponse.json({ error: "미니게임 경기를 확인하세요." }, { status: 400 });
+  }
   const sb = createServiceClient();
 
-  // 현재 미니게임 대상 경기 확인
-  const { data: settingsData } = await sb
-    .from("settings")
-    .select("mini_match_id")
-    .eq("id", 1)
+  // 활성 미니게임인지 확인
+  const { data: mgData } = await sb
+    .from("mini_games")
+    .select("match_id")
+    .eq("match_id", matchId)
     .maybeSingle();
-  const matchId = (settingsData as Pick<Settings, "mini_match_id"> | null)?.mini_match_id ?? null;
-  if (!matchId) {
-    return NextResponse.json({ error: "진행 중인 미니게임이 없습니다." }, { status: 400 });
+  if (!mgData) {
+    return NextResponse.json({ error: "진행 중인 미니게임이 아닙니다." }, { status: 400 });
   }
 
   const { data: matchData } = await sb.from("matches").select("*").eq("id", matchId).maybeSingle();

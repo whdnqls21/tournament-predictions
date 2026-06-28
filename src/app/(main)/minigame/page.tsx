@@ -23,7 +23,20 @@ export default function MiniGamePage() {
   const [error, setError] = useState<string | null>(null);
 
   if (!state) return null;
-  const mini = state.miniGame;
+  const minis = state.miniGames;
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -41,35 +54,27 @@ export default function MiniGamePage() {
         </div>
       )}
 
-      {!mini ? (
+      {minis.length === 0 ? (
         <Card className="py-10 text-center text-sm text-ink-dim">
           진행 중인 미니게임이 없어요.
         </Card>
       ) : (
-        <MiniCard
-          mini={mini}
-          now={now}
-          participants={state.participants}
-          busy={busy}
-          run={async (fn) => {
-            setBusy(true);
-            setError(null);
-            try {
-              await fn();
-              await refresh();
-            } catch (e) {
-              setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
-            } finally {
-              setBusy(false);
-            }
-          }}
-        />
+        minis.map((mini) => (
+          <MiniCard
+            key={mini.matchId}
+            mini={mini}
+            now={now}
+            participants={state.participants}
+            busy={busy}
+            run={run}
+          />
+        ))
       )}
     </div>
   );
 }
 
-type Mini = NonNullable<ReturnType<typeof useAppState>["state"]>["miniGame"];
+type Mini = NonNullable<ReturnType<typeof useAppState>["state"]>["miniGames"][number];
 
 function MiniCard({
   mini,
@@ -78,7 +83,7 @@ function MiniCard({
   busy,
   run,
 }: {
-  mini: NonNullable<Mini>;
+  mini: Mini;
   now: number;
   participants: { id: string; name: string }[];
   busy: boolean;
@@ -100,8 +105,10 @@ function MiniCard({
     else setB((v) => Math.max(0, Math.min(50, v + delta)));
   };
 
-  const submit = () => run(() => postJSON("/api/minigame", { action: "submit", a, b }));
-  const withdraw = () => run(() => postJSON("/api/minigame", { action: "withdraw" }));
+  const submit = () =>
+    run(() => postJSON("/api/minigame", { action: "submit", matchId: mini.matchId, a, b }));
+  const withdraw = () =>
+    run(() => postJSON("/api/minigame", { action: "withdraw", matchId: mini.matchId }));
 
   // 제출됨이면 서버에 저장된 값, 편집 중이면 로컬 값 표시
   const showA = !closed && submitted ? mini.myGuess!.a : a;
@@ -109,16 +116,19 @@ function MiniCard({
 
   return (
     <Card className="flex flex-col gap-4">
-      <div className="flex items-center justify-between text-[11px]">
-        <span className="text-ink-faint">⏰ {formatKickoff(mini.startsAt)}</span>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="truncate font-display text-base text-ink">
+          {mini.teamA} <span className="text-ink-faint">vs</span> {mini.teamB}
+        </h2>
         {closed ? (
-          <span className="text-gold">🔒 마감</span>
+          <span className="shrink-0 text-[11px] text-gold">🔒 마감</span>
         ) : countdown ? (
-          <span className="text-grass">{countdown} 시작</span>
+          <span className="shrink-0 text-[11px] text-grass">{countdown} 시작</span>
         ) : (
-          <span className="text-ink-faint">진행 중</span>
+          <span className="shrink-0 text-[11px] text-ink-faint">진행 중</span>
         )}
       </div>
+      <div className="-mt-2 text-[11px] text-ink-faint">⏰ {formatKickoff(mini.startsAt)}</div>
 
       {!closed && (
         <>

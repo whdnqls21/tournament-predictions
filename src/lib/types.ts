@@ -13,12 +13,16 @@ export interface Settings {
   id: number; // 항상 1 (단일 행)
   current_open_round: RoundKey | null;
   setup_done: boolean;
-  // 미니게임(스코어 맞히기) — 메인 게임과 별개. 현재 회차 1개.
-  mini_match_id: string | null; // 대상 경기(matches.id)
-  mini_home_score: number | null; // 실제 스코어 team_a
-  mini_away_score: number | null; // 실제 스코어 team_b
   created_at: string;
   updated_at: string;
+}
+
+// 활성 미니게임 (경기별 1행) — 여러 개 동시 운영
+export interface MiniGame {
+  match_id: string;
+  home_score: number | null; // 실제 스코어 team_a
+  away_score: number | null; // 실제 스코어 team_b
+  created_at: string;
 }
 
 // 미니게임 스코어 추측 (참가자 × 경기)
